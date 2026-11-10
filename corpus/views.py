@@ -37,6 +37,7 @@ from .services import (
     validate_book,
 )
 from .importers import import_zip
+from .colors import code_color, colored_book, highlight_style, highlighted_segments
 
 
 def api_errors(view):
@@ -125,7 +126,14 @@ def state(request):
             coder=session.coder,
             revision=session.revision,
             codebook=session.codebook,
-            yaml=yaml.safe_dump(session.codebook, sort_keys=False, allow_unicode=True),
+            colors={
+                code["id"]: code_color(code)
+                for code in session.codebook["codes"]
+                if code["kind"] == "code"
+            },
+            yaml=yaml.safe_dump(
+                colored_book(session.codebook), sort_keys=False, allow_unicode=True
+            ),
             assignments=assignments,
         )
     )
@@ -261,7 +269,7 @@ def complete(request, assignment_id):
 
 def yaml_response(book, filename):
     response = HttpResponse(
-        yaml.safe_dump(book, sort_keys=False, allow_unicode=True),
+        yaml.safe_dump(colored_book(book), sort_keys=False, allow_unicode=True),
         content_type="application/yaml",
     )
     response["Content-Disposition"] = f'attachment; filename="{filename}.yaml"'
@@ -361,7 +369,25 @@ def review(request, submission_id):
             submission.pk, request.user, int(request.POST["revision"]), decisions
         )
         return redirect("review", submission_id=submission.pk)
-    documents = {d.pk: d.text for d in submission.assignment.documents.all()}
+    snapshot = deepcopy(submission.snapshot)
+    snapshot["codebook"] = colored_book(snapshot["codebook"])
+    lookup = {code["id"]: code for code in snapshot["codebook"]["codes"]}
+    for annotation in snapshot["annotations"]:
+        annotation["highlight_style"] = highlight_style(
+            [code_color(lookup[identity]) for identity in sorted(annotation["codes"])]
+        )
+    for code in snapshot["codebook"]["codes"]:
+        code["highlight_style"] = (
+            highlight_style([code_color(code)]) if code["kind"] == "code" else ""
+        )
+    documents = {
+        d.pk: highlighted_segments(
+            d.text,
+            [a for a in snapshot["annotations"] if a["document"] == d.pk],
+            snapshot["codebook"]["codes"],
+        )
+        for d in submission.assignment.documents.all()
+    }
     return render(
         request,
         "corpus/review.html",
@@ -369,7 +395,7 @@ def review(request, submission_id):
             submission=submission,
             changes=changes,
             shared=shared,
-            snapshot=submission.snapshot,
+            snapshot=snapshot,
             documents=documents,
             audit=MergeAudit.objects.filter(submission=submission).first(),
         ),

@@ -115,6 +115,26 @@ function render() {
   renderCodes();
   renderAnnotations();
 }
+function applyCodeColors(node, ids) {
+  const colors = [
+    ...new Set(
+      ids
+        .sort()
+        .map((id) => state.colors[id])
+        .filter(Boolean),
+    ),
+  ];
+  if (!colors.length) return;
+  const stops = colors.flatMap((color, index) => {
+    const tint = `color-mix(in srgb, ${color} 40%, white)`;
+    return [
+      `${tint} ${(index * 100) / colors.length}%`,
+      `${tint} ${((index + 1) * 100) / colors.length}%`,
+    ];
+  });
+  node.style.background = `linear-gradient(to bottom, ${stops.join(",")})`;
+  node.style.color = "#24332e";
+}
 function renderText() {
   const root = $("#document");
   root.replaceChildren();
@@ -136,6 +156,10 @@ function renderText() {
     const active = annotations.filter((a) => a.start < end && a.end > start);
     if (active.length) {
       const mark = element("mark", text.slice(start, end));
+      applyCodeColors(
+        mark,
+        active.flatMap((a) => a.codes),
+      );
       mark.title = active
         .flatMap((a) =>
           a.codes.map(
@@ -173,6 +197,10 @@ function renderCodes() {
             else chosenCodes.delete(code.id);
           };
           label.append(input);
+          const swatch = element("span", undefined, "code-swatch");
+          swatch.style.backgroundColor = state.colors[code.id];
+          swatch.setAttribute("aria-hidden", "true");
+          label.append(swatch);
         }
         label.append(document.createTextNode(code.name));
         label.title = code.memo;
@@ -195,15 +223,18 @@ function renderAnnotations() {
     (a) => a.document === documentVersion?.id,
   ) || []) {
     const card = element("article", undefined, "annotation");
-    card.append(element("blockquote", a.selected_text));
-    for (const id of a.codes)
-      card.append(
-        element(
-          "span",
-          state.codebook.codes.find((c) => c.id === id)?.name || id,
-          "tag",
-        ),
+    const quote = element("blockquote", a.selected_text);
+    applyCodeColors(quote, a.codes);
+    card.append(quote);
+    for (const id of a.codes) {
+      const tag = element(
+        "span",
+        state.codebook.codes.find((c) => c.id === id)?.name || id,
+        "tag",
       );
+      applyCodeColors(tag, [id]);
+      card.append(tag);
+    }
     if (a.memo) card.append(element("p", a.memo));
     if (!assignment.locked) {
       const edit = element("button", "Edit", "secondary");
@@ -346,6 +377,22 @@ function openCode(code) {
   $("#code-dialog-title").textContent = code ? "Edit concept" : "Add code";
   $("#code-name").value = code?.name || "";
   $("#code-kind").value = code?.kind || "code";
+  const palette = [
+    "#e9a8b4",
+    "#a8c7e9",
+    "#c3a8e9",
+    "#a8e9b5",
+    "#e9c8a8",
+    "#e9e0a8",
+    "#a8e2e9",
+    "#dfb0db",
+  ];
+  $("#code-color").value = code
+    ? state.colors[code.id] || "#d8e4cf"
+    : palette[
+        state.codebook.codes.filter((c) => c.kind === "code").length %
+          palette.length
+      ];
   $("#code-memo").value = code?.memo || "";
   $("#code-rationale").value = code?.rationale || "";
   $("#code-archived").checked = !!code?.archived;
@@ -385,6 +432,7 @@ $("#code-form").onsubmit = async (event) => {
   Object.assign(code, {
     name: $("#code-name").value,
     kind: $("#code-kind").value,
+    color: $("#code-color").value,
     parent: $("#code-parent").value || null,
     memo: $("#code-memo").value,
     rationale: $("#code-rationale").value,

@@ -74,6 +74,9 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             )
             coder.get_by_role("button", name="Add code", exact=True).click()
             coder.get_by_label("Name", exact=True).fill("Disclosure requirement")
+            coder.get_by_label("Highlight color").evaluate(
+                "input => input.value = '#f08080'"
+            )
             coder.get_by_label("Memo · quoted evidence and citation").fill(
                 '"Contributors" (AI_POLICY.md, selected passage).'
             )
@@ -90,10 +93,58 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             coder.locator("#annotations").get_by_text(
                 "Coding evidence", exact=True
             ).wait_for()
+            mark = coder.locator("#document mark").first
+            self.assertTrue(
+                mark.evaluate(
+                    "node => node.style.background.includes('#f08080') || node.style.background.includes('240, 128, 128')"
+                )
+            )
+            # A second, overlapping code must produce two visible color bands.
+            state = coder.evaluate(
+                "fetch('/api/state/').then(response => response.json())"
+            )
+            assignment_id = state["assignments"][0]["id"]
+            version = state["assignments"][0]["documents"][0]
+            original = next(
+                code
+                for code in state["codebook"]["codes"]
+                if code["name"] == "Human review"
+            )
+            result = coder.evaluate(
+                """async data => {
+                const response = await fetch(`/api/assignments/${data.assignment}/annotations/`, {
+                    method:'POST', headers:{'Content-Type':'application/json', 'X-CSRFToken':document.querySelector('[name=csrfmiddlewaretoken]').value},
+                    body:JSON.stringify(data.annotation)
+                }); return response.status;
+            }""",
+                dict(
+                    assignment=assignment_id,
+                    annotation=dict(
+                        revision=1,
+                        codebook_revision=1,
+                        document=version["id"],
+                        document_hash=version["hash"],
+                        start=0,
+                        end=12,
+                        selected_text="Contributors",
+                        codes=[original["id"]],
+                        memo="Overlapping evidence",
+                    ),
+                ),
+            )
+            self.assertEqual(result, 200)
+            coder.reload()
+            coder.wait_for_selector("#document mark")
+            self.assertGreaterEqual(
+                coder.locator("#document mark").first.evaluate(
+                    "node => getComputedStyle(node).backgroundImage.split('color(srgb').length"
+                ),
+                5,
+            )
             # Editing a saved annotation autosaves without an explicit save click.
             coder.locator("#annotations").get_by_role(
                 "button", name="Edit", exact=True
-            ).click()
+            ).first.click()
             coder.get_by_label("Annotation memo").fill("Revised evidence")
             coder.locator("#annotations").get_by_text(
                 "Revised evidence", exact=True
@@ -110,5 +161,6 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             admin.locator("select[name^=action_]").select_option("accept")
             admin.get_by_role("button", name="Apply review decisions").click()
             admin.get_by_text("Codebook reviewed.", exact=False).wait_for()
+            self.assertGreater(admin.locator(".fulltext mark").count(), 0)
             self.assertEqual(errors, [])
             browser.close()

@@ -170,7 +170,9 @@ class WorkflowTests(TestCase):
             [self.document.pk],
         )
         exported = self.client.get("/work/codebook.yaml").content.decode()
-        self.assertEqual(load_book(exported), self.book)
+        from .colors import colored_book
+
+        self.assertEqual(load_book(exported), colored_book(self.book))
         book = deepcopy(self.book)
         book["codes"][0]["references"] = [
             dict(

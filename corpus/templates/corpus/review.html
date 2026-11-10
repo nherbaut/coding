@@ -66,9 +66,9 @@
     <p>
       {{ annotation.document_name }} · {{ annotation.start }}–{{ annotation.end }}
     </p>
-    <blockquote>{{ annotation.selected_text }}</blockquote>
+    <blockquote style="{{ annotation.highlight_style }}">{{ annotation.selected_text }}</blockquote>
     <p>
-      {% for code in snapshot.codebook.codes %}{% if code.id in annotation.codes %}<span class="tag">{{ code.name }}</span>{% endif %}{% endfor %}
+      {% for code in snapshot.codebook.codes %}{% if code.id in annotation.codes %}<span class="tag" style="{{ code.highlight_style }}">{{ code.name }}</span>{% endif %}{% endfor %}
     </p>
     <p>{{ annotation.memo }}</p>
   </article>
@@ -79,7 +79,7 @@
   {% for id,text in documents.items %}
   <details>
     <summary>Document version {{ id }}</summary>
-    <pre class="fulltext">{{ text }}</pre>
+    <pre class="fulltext">{% for segment in text %}{% if segment.style %}<mark style="{{ segment.style }}" title="{{ segment.title }}">{{ segment.text }}</mark>{% else %}{{ segment.text }}{% endif %}{% endfor %}</pre>
   </details>
   {% endfor %}
 </main>

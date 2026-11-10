@@ -5,6 +5,7 @@ import secrets
 import uuid
 import yaml
 from django.db import transaction
+from .colors import HEX_COLOR
 from .models import (
     Assignment,
     CodingSession,
@@ -50,6 +51,10 @@ def validate_book(book):
             code.get("archived", False), bool
         ):
             raise ValueError("Invalid rationale or archive flag")
+        if "color" in code and (
+            not isinstance(code["color"], str) or not HEX_COLOR.fullmatch(code["color"])
+        ):
+            raise ValueError("Code colors must use #RRGGBB format")
         name = (code.get("parent"), code["name"].strip().casefold())
         if name in names:
             raise ValueError("Duplicate names under the same parent")
