@@ -459,3 +459,23 @@ dialog::backdrop {
   padding: 7px 10px;
   font-size: 12px;
 }
+
+.annotation-highlight {
+  cursor: pointer;
+}
+.annotation-highlight:hover,
+.annotation-highlight:focus-visible {
+  outline: 2px solid #53635a;
+  outline-offset: 2px;
+}
+.memo-editor {
+  margin: 16px 0 0;
+}
+.memo-editor blockquote {
+  max-height: 160px;
+  overflow-y: auto;
+}
+.memo-save-status {
+  margin-bottom: 0;
+  color: var(--green);
+}

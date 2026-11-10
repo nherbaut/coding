@@ -214,6 +214,21 @@ function renderText() {
           ),
         )
         .join(", ");
+      const saved = active.filter((item) => !item.preview);
+      if (saved.length && !active.some((item) => item.preview)) {
+        mark.classList.add("annotation-highlight");
+        mark.tabIndex = 0;
+        mark.setAttribute("role", "button");
+        mark.setAttribute("aria-label", `Edit annotation memo: ${mark.title}`);
+        mark.title += " — Click to view or edit memos";
+        mark.onclick = () => openAnnotationMemos(saved);
+        mark.onkeydown = (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openAnnotationMemos(saved);
+          }
+        };
+      }
       root.append(mark);
     } else root.append(document.createTextNode(text.slice(start, end)));
   }
@@ -303,6 +318,9 @@ function renderAnnotations() {
     }
     if (a.memo) card.append(element("p", a.memo));
     if (!assignment.locked) {
+      const memoButton = element("button", "Edit memo", "secondary");
+      memoButton.onclick = () => openAnnotationMemos([a]);
+      card.append(memoButton);
       const edit = element("button", "Edit", "secondary");
       edit.onclick = () => {
         editing = a.id;
@@ -317,6 +335,87 @@ function renderAnnotations() {
     }
     root.append(card);
   }
+}
+function openAnnotationMemos(annotations) {
+  if (busy) {
+    status("Wait for the current save to finish.", true);
+    return;
+  }
+  if (hasUnsavedAnnotation()) {
+    status("Save or clear the current annotation before editing a memo.", true);
+    return;
+  }
+  const owner = assignment;
+  const root = $("#memo-editors");
+  root.replaceChildren();
+  for (const annotation of annotations) {
+    const card = element("article", undefined, "memo-editor");
+    const names = annotation.codes.map(
+      (id) => state.codebook.codes.find((code) => code.id === id)?.name || id,
+    );
+    card.append(element("h3", names.join(", ")));
+    const quote = element("blockquote", annotation.selected_text);
+    applyCodeColors(quote, annotation.codes);
+    card.append(quote);
+    const label = element("label", "Memo");
+    const input = element("textarea");
+    input.rows = 5;
+    input.value = annotation.memo;
+    input.readOnly = owner.locked;
+    label.append(input);
+    card.append(label);
+    const feedback = element(
+      "p",
+      owner.locked
+        ? "Submitted case. The admin must reopen it to edit memos."
+        : "",
+      "memo-save-status",
+    );
+    feedback.setAttribute("role", "status");
+    const save = element("button", "Save memo");
+    save.type = "button";
+    save.disabled = owner.locked;
+    save.onclick = async () => {
+      if (busy) return;
+      busy = true;
+      const memo = input.value;
+      input.readOnly = true;
+      for (const button of root.querySelectorAll("button"))
+        button.disabled = true;
+      feedback.textContent = "Saving…";
+      feedback.classList.remove("error");
+      try {
+        const result = await api(`/api/assignments/${owner.id}/annotations/`, {
+          ...annotation,
+          revision: owner.revision,
+          codebook_revision: state.revision,
+          memo,
+        });
+        owner.revision = result.revision;
+        owner.annotations = result.annotations;
+        if (editing === annotation.id) {
+          selected = {
+            ...owner.annotations.find((item) => item.id === annotation.id),
+          };
+          $("#memo").value = memo;
+        }
+        feedback.textContent = "Memo saved";
+        status("Memo saved");
+      } catch (error) {
+        feedback.textContent = error.message;
+        feedback.classList.add("error");
+      } finally {
+        busy = false;
+        input.readOnly = owner.locked;
+        for (const button of root.querySelectorAll("button"))
+          button.disabled = owner.locked;
+        render();
+      }
+    };
+    card.append(save, feedback);
+    root.append(card);
+  }
+  $("#memo-dialog").showModal();
 }
 function captureSelection() {
   if (assignment?.locked) return;

@@ -219,7 +219,7 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             )
             # Filtering the tree must preserve selected codes hidden by the search.
             coder.get_by_label("Find a code").fill("Human")
-            coder.get_by_label("Annotation memo").fill("Coding evidence")
+            coder.get_by_label("Annotation memo", exact=True).fill("Coding evidence")
             coder.get_by_role("button", name="Save annotation", exact=True).click()
             coder.locator("#annotations").get_by_text(
                 "Coding evidence", exact=True
@@ -278,11 +278,51 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
                 ),
                 5,
             )
+            # Highlight clicks expose each overlapping annotation's memo.
+            before = coder.evaluate("fetch('/api/state/').then(r => r.json())")[
+                "assignments"
+            ][0]["annotations"]
+            coder.locator("#document mark").first.click()
+            self.assertEqual(coder.locator("#memo-dialog textarea").count(), 2)
+            memo_field = coder.locator("#memo-dialog textarea").first
+            memo_field.fill("Memo edited from highlighted passage")
+            coder.locator("#memo-dialog").get_by_role(
+                "button", name="Save memo", exact=True
+            ).first.click()
+            coder.locator("#memo-dialog").get_by_text(
+                "Memo saved", exact=True
+            ).wait_for()
+            after = coder.evaluate("fetch('/api/state/').then(r => r.json())")[
+                "assignments"
+            ][0]["annotations"]
+            changed = next(
+                item
+                for item in after
+                if item["memo"] == "Memo edited from highlighted passage"
+            )
+            original = next(item for item in before if item["id"] == changed["id"])
+            self.assertEqual(changed["codes"], original["codes"])
+            self.assertEqual(
+                (changed["start"], changed["end"]), (original["start"], original["end"])
+            )
+            coder.locator("#close-memos").click()
+            self.assertTrue(
+                coder.get_by_role("button", name="Submit case", exact=True).is_enabled()
+            )
+            coder.reload()
+            coder.locator("#annotations").get_by_text(
+                "Memo edited from highlighted passage", exact=True
+            ).wait_for()
+            coder.locator("#annotations").get_by_role(
+                "button", name="Edit memo", exact=True
+            ).first.click()
+            self.assertEqual(coder.locator("#memo-dialog textarea").count(), 1)
+            coder.locator("#close-memos").click()
             # Editing a saved annotation autosaves without an explicit save click.
             coder.locator("#annotations").get_by_role(
                 "button", name="Edit", exact=True
             ).first.click()
-            coder.get_by_label("Annotation memo").fill("Revised evidence")
+            coder.get_by_label("Annotation memo", exact=True).fill("Revised evidence")
             coder.locator("#annotations").get_by_text(
                 "Revised evidence", exact=True
             ).wait_for()
@@ -291,6 +331,23 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             coder.wait_for_function(
                 "document.querySelector('#save-status').textContent === 'Case submitted'"
             )
+            coder.wait_for_function(
+                "document.querySelector('#annotation-guidance').textContent.includes('Submitted case')"
+            )
+            coder.locator("#document mark").first.click()
+            coder.locator("#memo-dialog[open]").wait_for()
+            self.assertTrue(
+                coder.locator("#memo-dialog textarea").first.evaluate(
+                    "node => node.readOnly"
+                )
+            )
+            self.assertTrue(
+                coder.locator("#memo-dialog")
+                .get_by_role("button", name="Save memo", exact=True)
+                .first.is_disabled()
+            )
+            coder.locator("#close-memos").click()
+
             admin.goto(self.live_server_url + "/")
             admin.get_by_role(
                 "link", name="Review submission", exact=False
