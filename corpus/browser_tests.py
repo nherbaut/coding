@@ -278,6 +278,22 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
                 ),
                 5,
             )
+            # Right-click actions identify overlapping annotations individually.
+            coder.locator("#document mark").first.click(button="right")
+            coder.locator("#annotation-context-menu").wait_for(state="visible")
+            self.assertEqual(
+                coder.locator("#annotation-context-menu [role=group]").count(), 2
+            )
+            coder.locator("#annotation-context-menu").get_by_role(
+                "menuitem", name="Edit memo", exact=True
+            ).first.click()
+            self.assertEqual(coder.locator("#memo-dialog textarea").count(), 1)
+            coder.locator("#close-memos").click()
+            coder.locator("#document mark").first.focus()
+            coder.keyboard.press("Shift+F10")
+            coder.locator("#annotation-context-menu").wait_for(state="visible")
+            coder.keyboard.press("Escape")
+            self.assertTrue(coder.locator("#annotation-context-menu").is_hidden())
             # Highlight clicks expose each overlapping annotation's memo.
             before = coder.evaluate("fetch('/api/state/').then(r => r.json())")[
                 "assignments"
@@ -326,6 +342,39 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             coder.locator("#annotations").get_by_text(
                 "Revised evidence", exact=True
             ).wait_for()
+            # Delete one overlap, preserving the other annotation and its highlight.
+            current = coder.evaluate("fetch('/api/state/').then(r => r.json())")
+            human_id = next(
+                code["id"]
+                for code in current["codebook"]["codes"]
+                if code["name"] == "Human review"
+            )
+            deleted_id = next(
+                item["id"]
+                for item in current["assignments"][0]["annotations"]
+                if human_id in item["codes"]
+            )
+            kept_id = next(
+                item["id"]
+                for item in current["assignments"][0]["annotations"]
+                if item["id"] != deleted_id
+            )
+            coder.locator("#document mark").first.click(button="right")
+            coder.locator(
+                f'#annotation-context-menu [data-annotation-id="{deleted_id}"]'
+            ).get_by_role("menuitem", name="Delete annotation", exact=True).click()
+            coder.wait_for_function(
+                "document.querySelector('#annotation-count').textContent === '1 saved annotation'"
+            )
+            coder.reload()
+            coder.wait_for_function(
+                "document.querySelector('#document-title').textContent.length>0"
+            )
+            remaining = coder.evaluate("fetch('/api/state/').then(r => r.json())")[
+                "assignments"
+            ][0]["annotations"]
+            self.assertEqual([item["id"] for item in remaining], [kept_id])
+            self.assertGreater(coder.locator("#document mark").count(), 0)
             coder.once("dialog", lambda dialog: dialog.accept())
             coder.get_by_role("button", name="Submit case", exact=True).click()
             coder.wait_for_function(
@@ -334,6 +383,19 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             coder.wait_for_function(
                 "document.querySelector('#annotation-guidance').textContent.includes('Submitted case')"
             )
+            coder.locator("#document mark").first.click(button="right")
+            coder.locator("#annotation-context-menu").wait_for(state="visible")
+            self.assertTrue(
+                coder.locator("#annotation-context-menu")
+                .get_by_role("menuitem", name="Delete annotation", exact=True)
+                .is_disabled()
+            )
+            self.assertTrue(
+                coder.locator("#annotation-context-menu")
+                .get_by_role("menuitem", name="Edit memo", exact=True)
+                .is_disabled()
+            )
+            coder.keyboard.press("Escape")
             coder.locator("#document mark").first.click()
             coder.locator("#memo-dialog[open]").wait_for()
             self.assertTrue(

@@ -80,6 +80,7 @@ async function openDocument(nextAssignment, nextDocument) {
   render();
 }
 function render() {
+  closeAnnotationMenu();
   $("#files").replaceChildren();
   for (const a of state.assignments) {
     const heading = element("h3");
@@ -220,12 +221,24 @@ function renderText() {
         mark.tabIndex = 0;
         mark.setAttribute("role", "button");
         mark.setAttribute("aria-label", `Edit annotation memo: ${mark.title}`);
-        mark.title += " — Click to view or edit memos";
+        mark.title +=
+          " — Click to view or edit memos; right-click for annotation actions";
         mark.onclick = () => openAnnotationMemos(saved);
+        mark.oncontextmenu = (event) => {
+          event.preventDefault();
+          openAnnotationMenu(saved, event.clientX, event.clientY, mark);
+        };
         mark.onkeydown = (event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             openAnnotationMemos(saved);
+          } else if (
+            event.key === "ContextMenu" ||
+            (event.shiftKey && event.key === "F10")
+          ) {
+            event.preventDefault();
+            const rect = mark.getBoundingClientRect();
+            openAnnotationMenu(saved, rect.left, rect.bottom, mark);
           }
         };
       }
@@ -330,12 +343,129 @@ function renderAnnotations() {
         render();
       };
       const remove = element("button", "Delete", "secondary");
-      remove.onclick = () => saveAnnotation({ id: a.id, delete: true });
+      remove.onclick = () => deleteSavedAnnotation(a);
       card.append(edit, remove);
     }
     root.append(card);
   }
 }
+let annotationMenuAnchor = null;
+function closeAnnotationMenu(restoreFocus = false) {
+  $("#annotation-context-menu").hidden = true;
+  if (restoreFocus && annotationMenuAnchor?.isConnected)
+    annotationMenuAnchor.focus();
+  annotationMenuAnchor = null;
+}
+function deleteSavedAnnotation(annotation) {
+  if (busy) return;
+  if (assignment.locked) {
+    status(
+      "The admin must reopen this case before annotations can be deleted.",
+      true,
+    );
+    return;
+  }
+  if (hasUnsavedAnnotation()) {
+    status(
+      "Save or clear the current annotation before deleting another annotation.",
+      true,
+    );
+    return;
+  }
+  return saveAnnotation({ id: annotation.id, delete: true });
+}
+function openAnnotationMenu(annotations, x, y, anchor) {
+  closeAnnotationMenu();
+  if (busy || hasUnsavedAnnotation()) {
+    status(
+      "Save or clear the current annotation before opening annotation actions.",
+      true,
+    );
+    return;
+  }
+  const menu = $("#annotation-context-menu");
+  menu.replaceChildren();
+  annotationMenuAnchor = anchor;
+  for (const annotation of annotations) {
+    const group = element("div", undefined, "annotation-menu-group");
+    group.dataset.annotationId = annotation.id;
+    const names = annotation.codes
+      .map(
+        (id) => state.codebook.codes.find((code) => code.id === id)?.name || id,
+      )
+      .join(", ");
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", names);
+    if (annotations.length > 1) {
+      group.append(element("strong", names));
+      group.append(element("small", annotation.selected_text.slice(0, 80)));
+    }
+    const editMemo = element("button", "Edit memo");
+    editMemo.type = "button";
+    editMemo.setAttribute("role", "menuitem");
+    editMemo.disabled = assignment.locked;
+    editMemo.onclick = () => {
+      closeAnnotationMenu();
+      openAnnotationMemos([annotation]);
+    };
+    const remove = element("button", "Delete annotation");
+    remove.type = "button";
+    remove.setAttribute("role", "menuitem");
+    remove.className = "delete-annotation";
+    remove.disabled = assignment.locked;
+    remove.onclick = () => {
+      closeAnnotationMenu();
+      deleteSavedAnnotation(annotation);
+    };
+    group.append(editMemo, remove);
+    menu.append(group);
+  }
+  menu.hidden = false;
+  menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - menu.offsetHeight - 8))}px`;
+  menu.querySelector("button:not(:disabled)")?.focus();
+}
+document.addEventListener("pointerdown", (event) => {
+  if (!$("#annotation-context-menu").contains(event.target))
+    closeAnnotationMenu();
+});
+document.addEventListener("keydown", (event) => {
+  const menu = $("#annotation-context-menu");
+  if (menu.hidden) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeAnnotationMenu(true);
+    return;
+  }
+  if (event.key === "Tab") {
+    closeAnnotationMenu();
+    return;
+  }
+  const items = [...menu.querySelectorAll("button:not(:disabled)")];
+  if (!items.length) return;
+  const current = items.indexOf(document.activeElement);
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    items[
+      (current +
+        (event.key === "ArrowDown" ? 1 : items.length - 1) +
+        items.length) %
+        items.length
+    ].focus();
+  } else if (event.key === "Home" || event.key === "End") {
+    event.preventDefault();
+    items[event.key === "Home" ? 0 : items.length - 1].focus();
+  }
+});
+window.addEventListener("resize", () => closeAnnotationMenu());
+document.addEventListener(
+  "scroll",
+  (event) => {
+    if (!$("#annotation-context-menu").contains(event.target))
+      closeAnnotationMenu();
+  },
+  true,
+);
 function openAnnotationMemos(annotations) {
   if (busy) {
     status("Wait for the current save to finish.", true);
@@ -417,7 +547,8 @@ function openAnnotationMemos(annotations) {
   }
   $("#memo-dialog").showModal();
 }
-function captureSelection() {
+function captureSelection(event) {
+  if (event.type === "mouseup" && event.button !== 0) return;
   if (assignment?.locked) return;
   const selection = window.getSelection();
   if (!selection.rangeCount || selection.isCollapsed) return;

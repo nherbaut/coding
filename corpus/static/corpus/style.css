@@ -479,3 +479,49 @@ dialog::backdrop {
   margin-bottom: 0;
   color: var(--green);
 }
+
+.annotation-context-menu {
+  position: fixed;
+  z-index: 20;
+  min-width: 190px;
+  max-width: min(360px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 6px 24px #17332626;
+}
+.annotation-menu-group + .annotation-menu-group {
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+.annotation-menu-group strong,
+.annotation-menu-group small {
+  display: block;
+  padding: 4px 10px;
+  overflow-wrap: anywhere;
+}
+.annotation-menu-group small {
+  font-size: 12px;
+  color: #617468;
+}
+.annotation-context-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 0;
+  background: white;
+  color: #24332e;
+}
+.annotation-context-menu button:hover,
+.annotation-context-menu button:focus-visible {
+  background: #edf2e9;
+  outline: 0;
+}
+.annotation-context-menu .delete-annotation {
+  color: #a52b22;
+}
