@@ -94,3 +94,42 @@ if AUTHELIA_AUTH_ENABLED:
             "Authelia requires a strong proxy secret and trusted proxy addresses"
         )
     AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.RemoteUserBackend"]
+
+
+# Transactional submission notifications. Credentials are provided through the environment.
+EMAIL_BACKEND = os.environ.get(
+    "EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend"
+)
+EMAIL_HOST = os.environ.get("SMTP_HOST", "")
+EMAIL_PORT = int(os.environ.get("SMTP_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("SMTP_USERNAME", "")
+EMAIL_HOST_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("SMTP_STARTTLS", "1") == "1"
+EMAIL_USE_SSL = os.environ.get("SMTP_TLS", "0") == "1"
+EMAIL_TIMEOUT = 15
+DEFAULT_FROM_EMAIL = os.environ.get("MAIL_FROM", "no-reply@localhost")
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
+CASE_EMAIL_ENABLED = os.environ.get("CASE_EMAIL_ENABLED", "0") == "1"
+CASE_SUBMISSION_EMAIL_TO = [
+    address.strip()
+    for address in os.environ.get("CASE_SUBMISSION_EMAIL_TO", "").split(",")
+    if address.strip()
+]
+if EMAIL_USE_TLS and EMAIL_USE_SSL:
+    raise RuntimeError("Choose SMTP_STARTTLS or SMTP_TLS, not both")
+if CASE_EMAIL_ENABLED:
+    from django.core.validators import validate_email
+    from email.utils import parseaddr
+    from urllib.parse import urlsplit
+
+    if not EMAIL_HOST or not CASE_SUBMISSION_EMAIL_TO:
+        raise RuntimeError(
+            "Submission email requires SMTP_HOST and CASE_SUBMISSION_EMAIL_TO"
+        )
+    for address in [parseaddr(DEFAULT_FROM_EMAIL)[1], *CASE_SUBMISSION_EMAIL_TO]:
+        validate_email(address)
+    if (
+        urlsplit(PUBLIC_BASE_URL).scheme not in ("http", "https")
+        or not urlsplit(PUBLIC_BASE_URL).hostname
+    ):
+        raise RuntimeError("Set PUBLIC_BASE_URL to the website address")

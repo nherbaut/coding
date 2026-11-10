@@ -342,7 +342,7 @@ def dashboard(request):
             sessions=CodingSession.objects.all(),
             assignments=Assignment.objects.select_related("session", "case"),
             submissions=Submission.objects.select_related(
-                "assignment__session", "assignment__case"
+                "assignment__session", "assignment__case", "email_notification"
             ).order_by("-pk"),
             shared=SharedCodebook.objects.order_by("-pk").first(),
         ),

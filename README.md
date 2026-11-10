@@ -109,3 +109,11 @@ For the optional real-browser check, install `requirements-test.txt`, run `pytho
 ## Code colors
 
 Selectable taxonomy terms have a stable default color derived from their UUID. The concept editor includes a Highlight color picker, and YAML supports an optional `color: '#RRGGBB'` field. Code lists show matching swatches. Coded passages and annotation labels use a readable tint of the selected color. Overlapping passages show horizontal bands for all assigned code colors, with code names on hover. Submitted review pages use the submission's frozen codebook colors. Existing codebooks display colors immediately, and YAML downloads include the effective colors.
+
+## Submission email notifications
+
+Set `CASE_EMAIL_ENABLED=1`, `PUBLIC_BASE_URL`, `CASE_SUBMISSION_EMAIL_TO` (comma-separated administrator addresses), `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, and `MAIL_FROM` in the protected environment. Use `SMTP_STARTTLS=1` and `SMTP_TLS=0` for STARTTLS, or the reverse for implicit TLS. Keep credentials outside Git.
+
+Submitting a case stores an email in the same database transaction as its immutable submission. The separate mailer service sends the notification with coder, case, submission time, counts and an authenticated review link. Delivery errors retain the queued notification and retry with increasing delays up to one hour. The dashboard shows Queued, Retrying or Sent. Sent means that SMTP accepted the message. Code excerpts and private coder links are excluded from the email.
+
+The Compose stack includes the mailer worker. For a manual delivery pass, run `python manage.py deliver_notifications`; use `--watch` for continuous delivery. Disabling `CASE_EMAIL_ENABLED` pauses delivery and creation of new notifications. Existing pending messages remain stored. Notifications are created for new submissions after email is enabled, including resubmissions after an admin reopens a case. They are not generated retrospectively for existing submissions. A stable Message-ID is retained across retries, though an interrupted SMTP acknowledgement can still produce a duplicate delivery.

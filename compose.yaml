@@ -6,26 +6,61 @@ services:
       POSTGRES_USER: coding
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
     volumes:
-      - coding_database:/var/lib/postgresql/data
+    - coding_database:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U coding"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U coding
       interval: 5s
       retries: 10
   web:
     build: .
     ports:
-      - "127.0.0.1:8000:8000"
-    environment:
-      DEBUG: "0"
+    - 127.0.0.1:8000:8000
+    environment: &coding_environment
+      DEBUG: '0'
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY}
       POSTGRES_HOST: db
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost}
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-https://localhost}
+      CASE_EMAIL_ENABLED: ${CASE_EMAIL_ENABLED:-0}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-1}
+      SMTP_TLS: ${SMTP_TLS:-0}
+      MAIL_FROM: ${MAIL_FROM:-no-reply@localhost}
+      CASE_SUBMISSION_EMAIL_TO: ${CASE_SUBMISSION_EMAIL_TO:-}
     volumes:
-      - ${RESEARCH_DIR:-./research}:/research:ro
+    - ${RESEARCH_DIR:-./research}:/research:ro
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import os, urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/healthz/', headers={'Host':os.environ.get('ALLOWED_HOSTS','localhost').split(',')[0]}),
+        timeout=5)
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+  mailer:
+    build: .
+    environment: *coding_environment
+    command:
+    - python
+    - manage.py
+    - deliver_notifications
+    - --watch
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
 volumes:
-  coding_database:
+  coding_database: null

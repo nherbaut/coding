@@ -61,6 +61,7 @@
         <th>Case</th>
         <th>Submitted</th>
         <th>Review</th>
+        <th>Email</th>
       </tr>
     </thead>
     <tbody>
@@ -74,10 +75,11 @@
             >Review submission {{ item.pk }}</a
           >
         </td>
+        <td>{{ item.email_notification.status|default:'—' }}{% if item.email_notification.last_error %}<br><small>{{ item.email_notification.last_error }}</small>{% endif %}</td>
       </tr>
       {% empty %}
       <tr>
-        <td colspan="4">Submitted cases will appear here.</td>
+        <td colspan="5">Submitted cases will appear here.</td>
       </tr>
       {% endfor %}
     </tbody>

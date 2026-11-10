@@ -5,13 +5,37 @@ services:
     container_name: coding
     restart: unless-stopped
     env_file:
-      - ./coding.env
+    - ./coding.env
     ports:
-      - "192.168.1.61:8147:8000"
-    command: ["sh", "-c", "python manage.py migrate --noinput && exec gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --error-logfile -"]
+    - 192.168.1.61:8147:8000
+    command:
+    - sh
+    - -c
+    - python manage.py migrate --noinput && exec gunicorn config.wsgi:application
+      --bind 0.0.0.0:8000 --workers 3 --error-logfile -
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz/', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz/',
+        timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+  coding-mailer:
+    image: docker.io/nherbaut/coding:arm64
+    platform: linux/arm64
+    container_name: coding-mailer
+    restart: unless-stopped
+    env_file:
+    - ./coding.env
+    command:
+    - python
+    - manage.py
+    - deliver_notifications
+    - --watch
+    depends_on:
+      coding:
+        condition: service_healthy

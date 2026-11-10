@@ -1,5 +1,6 @@
 import uuid
 from django.db import models
+from django.utils import timezone
 
 
 class Case(models.Model):
@@ -111,3 +112,27 @@ class MergeAudit(models.Model):
     decisions = models.JSONField()
     mappings = models.JSONField(default=dict)
     created = models.DateTimeField(auto_now_add=True)
+
+
+class SubmissionEmail(models.Model):
+    submission = models.OneToOneField(
+        Submission, on_delete=models.PROTECT, related_name="email_notification"
+    )
+    subject = models.CharField(max_length=250)
+    body = models.TextField()
+    sender = models.CharField(max_length=254)
+    recipients = models.JSONField()
+    message_id = models.CharField(max_length=254)
+    created = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    attempts = models.PositiveIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(default=timezone.now)
+    lease_token = models.UUIDField(null=True, blank=True)
+    locked_until = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=100, blank=True)
+
+    @property
+    def status(self):
+        if self.sent_at:
+            return "Sent"
+        return "Retrying" if self.attempts else "Queued"

@@ -12,8 +12,8 @@ Add the `coding` service from `compose-service.yaml` to `/home/nherbaut/server/d
 
 ```sh
 cd /home/nherbaut/server
-docker compose pull coding
-docker compose up -d --no-deps coding
+docker compose pull coding coding-mailer
+docker compose up -d coding coding-mailer
 docker compose ps coding
 ```
 
@@ -46,3 +46,7 @@ To change the database password, update PostgreSQL's `coding` role and `/home/nh
 Use `pg_dump` on the existing PostgreSQL host to back up the `coding` database. Back up the protected environment file separately. Database snapshots include corpus text, codebooks, private-link token hashes, annotations, immutable submissions and audit records.
 
 Integration references are the [Authelia Traefik documentation](https://www.authelia.com/integration/proxies/traefik/) and [Django remote-user authentication documentation](https://docs.djangoproject.com/en/5.2/howto/auth-remote-user/).
+
+## Submission notifications
+
+Both `coding` and `coding-mailer` use `/home/nherbaut/server/coding.env`. Set `CASE_EMAIL_ENABLED=1` with the SMTP settings and `CASE_SUBMISSION_EMAIL_TO`. The worker starts after the web service is healthy and retries queued notifications after mail-server failures. After changing SMTP settings, recreate both services so they receive the updated environment. Check `docker compose logs coding-mailer` for delivery problems. Logs identify error types and SMTP status codes without recording passwords or provider response text.

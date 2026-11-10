@@ -174,6 +174,9 @@ def submit(assignment_id, session_id, expected):
     assignment.locked = True
     assignment.revision += 1
     assignment.save()
+    from .notifications import queue_submission_email
+
+    queue_submission_email(submission)
     return submission
 
 
