@@ -531,3 +531,12 @@ dialog::backdrop {
   color: HighlightText;
   outline: 0;
 }
+
+.memo-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.memo-actions .delete-annotation {
+  color: #a52b22;
+}

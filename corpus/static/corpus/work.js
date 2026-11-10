@@ -505,6 +505,7 @@ function openAnnotationMemos(annotations) {
   root.replaceChildren();
   for (const annotation of annotations) {
     const card = element("article", undefined, "memo-editor");
+    card.dataset.annotationId = annotation.id;
     const names = annotation.codes.map(
       (id) => state.codebook.codes.find((code) => code.id === id)?.name || id,
     );
@@ -567,7 +568,37 @@ function openAnnotationMemos(annotations) {
         render();
       }
     };
-    card.append(save, feedback);
+    const remove = element(
+      "button",
+      "Delete annotation",
+      "secondary delete-annotation",
+    );
+    remove.type = "button";
+    remove.disabled = owner.locked;
+    remove.onclick = async () => {
+      if (busy) return;
+      for (const button of root.querySelectorAll("button"))
+        button.disabled = true;
+      feedback.textContent = "Deleting…";
+      feedback.classList.remove("error");
+      try {
+        const deleted = await deleteSavedAnnotation(annotation);
+        if (deleted) {
+          card.remove();
+          status("Annotation deleted");
+          if (!root.querySelector(".memo-editor")) $("#memo-dialog").close();
+        } else {
+          feedback.textContent = $("#save-status").textContent;
+          feedback.classList.add("error");
+        }
+      } finally {
+        for (const button of root.querySelectorAll("button"))
+          button.disabled = owner.locked;
+      }
+    };
+    const actions = element("div", undefined, "memo-actions");
+    actions.append(save, remove);
+    card.append(actions, feedback);
     root.append(card);
   }
   $("#memo-dialog").showModal();

@@ -400,6 +400,35 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             ][0]["annotations"]
             self.assertEqual([item["id"] for item in remaining], [kept_id])
             self.assertGreater(coder.locator("#document mark").count(), 0)
+            # Deleting one modal entry preserves the overlapping annotation.
+            duplicate = coder.evaluate(
+                """async ()=>{
+                const state=await fetch('/api/state/').then(r=>r.json());
+                const owner=state.assignments[0];
+                const {id,...annotation}=owner.annotations[0];
+                const response=await fetch(`/api/assignments/${owner.id}/annotations/`,{
+                    method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':document.querySelector('[name=csrfmiddlewaretoken]').value},
+                    body:JSON.stringify({...annotation,revision:owner.revision,codebook_revision:state.revision,memo:'Delete from memo modal'})
+                });
+                if(!response.ok)throw Error('Unable to create modal-delete fixture');
+                return (await response.json()).annotations.find(a=>a.memo==='Delete from memo modal');
+            }"""
+            )
+            coder.reload()
+            coder.locator("#document mark").first.click()
+            coder.locator(
+                f'#memo-dialog [data-annotation-id="{duplicate["id"]}"]'
+            ).get_by_role("button", name="Delete annotation", exact=True).click()
+            coder.locator(
+                f'#memo-dialog [data-annotation-id="{duplicate["id"]}"]'
+            ).wait_for(state="detached")
+            self.assertTrue(coder.locator("#memo-dialog").is_visible())
+            self.assertEqual(coder.locator("#memo-dialog .memo-editor").count(), 1)
+            coder.locator("#close-memos").click()
+            remaining = coder.evaluate("fetch('/api/state/').then(r => r.json())")[
+                "assignments"
+            ][0]["annotations"]
+            self.assertEqual([item["id"] for item in remaining], [kept_id])
             coder.once("dialog", lambda dialog: dialog.accept())
             coder.get_by_role("button", name="Submit case", exact=True).click()
             coder.wait_for_function(
@@ -431,6 +460,11 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             self.assertTrue(
                 coder.locator("#memo-dialog")
                 .get_by_role("button", name="Save memo", exact=True)
+                .first.is_disabled()
+            )
+            self.assertTrue(
+                coder.locator("#memo-dialog")
+                .get_by_role("button", name="Delete annotation", exact=True)
                 .first.is_disabled()
             )
             coder.locator("#close-memos").click()
