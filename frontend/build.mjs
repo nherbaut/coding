@@ -29,4 +29,4 @@ for (const name of [...packages].sort()) {
       .find((file) => /^licen[sc]e(?:\.|$)/i.test(file));
   notices += `${name} ${info.version} (${info.license})\n${license ? fs.readFileSync(path.join(directory, license), "utf8") : "See package metadata for license terms."}\n\n`;
 }
-fs.writeFileSync("../corpus/static/corpus/markdown.LICENSE.txt", notices);
+fs.writeFileSync("../corpus/static/corpus/markdown.LICENSE.txt", notices.trimEnd() + "\n");
