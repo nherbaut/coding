@@ -1,0 +1,85 @@
+{% extends 'corpus/base.html' %}{% load static %}{% block navigation %}<span
+  >{{ coder }}</span
+><a href="/work/codebook.yaml">Export YAML</a
+><button id="open-book" class="secondary">Edit codebook</button>{% endblock %}{% block content %}
+<form hidden>{% csrf_token %}</form>
+<div class="workbar">
+  <strong id="case-title">Loading workspace…</strong
+  ><span id="save-status" role="status"></span
+  ><button id="submit-case">Submit case</button>
+</div>
+<main class="workspace">
+  <aside class="files">
+    <h2>Assigned cases</h2>
+    <div id="files"></div>
+  </aside>
+  <section class="reader">
+    <h1 id="document-title"></h1>
+    <details>
+      <summary>Document metadata</summary>
+      <pre id="metadata"></pre>
+    </details>
+    <div id="document" tabindex="0"></div>
+    <h2>Passage annotations</h2>
+    <div id="annotations"></div>
+  </section>
+  <aside class="codes">
+    <h2>Code passage</h2>
+    <blockquote id="selection">Select a passage in the document.</blockquote>
+    <label
+      >Find a code<input id="code-search" placeholder="Search codebook"
+    /></label>
+    <div id="code-tree"></div>
+    <label>Annotation memo<textarea id="memo" rows="4"></textarea></label
+    ><button id="save-annotation">Save annotation</button
+    ><button id="cancel-edit" class="secondary" hidden>Cancel edit</button
+    ><button id="new-code" class="secondary">Add code</button>
+  </aside>
+</main>
+<dialog id="book-dialog">
+  <form method="dialog"><button class="close secondary">Close</button></form>
+  <h2>Personal codebook</h2>
+  <p>
+    YAML supports stable IDs, hierarchy, reference memos, corpus excerpts and
+    separate rationale.
+  </p>
+  <textarea id="book-yaml" rows="22" spellcheck="false"></textarea
+  ><button id="save-book">Save codebook</button>
+  <p id="book-status" role="status"></p>
+</dialog>
+<dialog id="code-dialog">
+  <form id="code-form">
+    <h2 id="code-dialog-title">Add code</h2>
+    <label>Name<input id="code-name" required /></label
+    ><label
+      >Kind<select id="code-kind">
+        <option value="code">Code</option>
+        <option value="category">Category</option>
+      </select></label
+    ><label>Parent<select id="code-parent"></select></label
+    ><label
+      >Memo · quoted evidence and citation<textarea
+        id="code-memo"
+        rows="4"
+      ></textarea></label
+    ><label
+      >Researcher rationale<textarea
+        id="code-rationale"
+        rows="3"
+      ></textarea></label
+    ><label><input id="code-archived" type="checkbox" /> Archived</label
+    ><label
+      ><input id="code-evidence" type="checkbox" /> Attach selected corpus
+      excerpt as a reference</label
+    >
+    <div class="actions">
+      <button>Save concept</button
+      ><button type="button" id="delete-code" class="secondary">
+        Delete unused concept</button
+      ><button type="button" id="close-code" class="secondary">Cancel</button>
+    </div>
+    <p id="code-status" role="status"></p>
+  </form>
+</dialog>
+<script src="{% static 'corpus/work.js' %}" defer></script>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends 'corpus/base.html' %}{% block content %}
+<main class="narrow">
+  <h1>Open your coding session</h1>
+  <p id="status">Opening private workspace…</p>
+  <form hidden>{% csrf_token %}</form>
+</main>
+<script>
+  const token = location.hash.slice(1);
+  history.replaceState(null, "", "/access/");
+  fetch("/access/exchange/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value,
+    },
+    body: JSON.stringify({ token }),
+  })
+    .then(async (r) => {
+      if (!r.ok)
+        throw Error(
+          "This link is invalid or has been revoked. Ask the admin for a new link.",
+        );
+      location.replace((await r.json()).url);
+    })
+    .catch((e) => (document.querySelector("#status").textContent = e.message));
+</script>
+{% endblock %}

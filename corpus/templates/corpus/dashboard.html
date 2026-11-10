@@ -1,0 +1,145 @@
+{% extends 'corpus/base.html' %}{% block navigation %}<a
+  href="/exports/shared.yaml"
+  >Export codebook</a
+><a href="/admin/">Admin account</a>{% endblock %}{% block content %}
+<main class="dashboard">
+  <h1>Research overview</h1>
+  {% if notice %}
+  <div class="notice">{{ notice }}</div>
+  {% endif %}
+  <section class="dashboard-grid">
+    <article>
+      <h2>Create a coder session</h2>
+      <form method="post">
+        {% csrf_token %}<input
+          type="hidden"
+          name="action"
+          value="create"
+        /><label
+          >Coder name<input name="coder" required maxlength="200" /></label
+        ><label
+          >Assigned cases<select name="cases" multiple size="7">
+            {% for case in cases %}
+            <option value="{{ case.pk }}">{{ case.name }}</option>
+            {% endfor %}
+          </select></label
+        ><button>Create private link</button>
+      </form>
+    </article>
+    <article>
+      <h2>Corpus and shared codebook</h2>
+      <p>Shared version {{ shared.pk|default:'—' }}</p>
+      <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}<input
+          type="hidden"
+          name="action"
+          value="corpus"
+        /><label
+          >Corpus ZIP<input
+            type="file"
+            name="file"
+            accept=".zip"
+            required /></label
+        ><button>Import corpus</button>
+      </form>
+      <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}<input type="hidden" name="action" value="book" /><label
+          >Codebook YAML<input
+            type="file"
+            name="file"
+            accept=".yaml,.yml"
+            required /></label
+        ><button>Publish shared version</button>
+      </form>
+    </article>
+  </section>
+  <h2>Submitted cases</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Coder</th>
+        <th>Case</th>
+        <th>Submitted</th>
+        <th>Review</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in submissions %}
+      <tr>
+        <td>{{ item.assignment.session.coder }}</td>
+        <td>{{ item.assignment.case.name }}</td>
+        <td>{{ item.created }}</td>
+        <td>
+          <a href="{% url 'review' item.pk %}"
+            >Review submission {{ item.pk }}</a
+          >
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="4">Submitted cases will appear here.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <h2>Assignments</h2>
+  <table>
+    <tr>
+      <th>Coder</th>
+      <th>Case</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+    {% for a in assignments %}
+    <tr>
+      <td>{{ a.session.coder }}</td>
+      <td>{{ a.case.name }}</td>
+      <td>{% if a.locked %}Submitted{% else %}In progress{% endif %}</td>
+      <td>
+        {% if a.locked %}
+        <form method="post">
+          {% csrf_token %}<input
+            type="hidden"
+            name="action"
+            value="reopen"
+          /><input type="hidden" name="assignment" value="{{ a.pk }}" /><button>
+            Reopen
+          </button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <h2>Coder sessions</h2>
+  {% for session in sessions %}
+  <article class="session">
+    <h3>{{ session.coder }}</h3>
+    <p>{{ session.pk }}</p>
+    <form method="post">
+      {% csrf_token %}<input
+        type="hidden"
+        name="session"
+        value="{{ session.pk }}"
+      /><button name="action" value="rotate">Generate new private link</button
+      ><button class="secondary" name="action" value="revoke">
+        Revoke link
+      </button>
+    </form>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="action" value="assign" /><input
+        type="hidden"
+        name="session"
+        value="{{ session.pk }}"
+      /><label
+        >Add cases<select name="cases" multiple>
+          {% for case in cases %}
+          <option value="{{ case.pk }}">{{ case.name }}</option>
+          {% endfor %}
+        </select></label
+      ><button>Add assignments</button>
+    </form>
+  </article>
+  {% endfor %}
+</main>
+{% endblock %}

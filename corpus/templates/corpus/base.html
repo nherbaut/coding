@@ -1,0 +1,17 @@
+{% load static %}<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="referrer" content="same-origin" />
+    <title>Corpus · Research coding</title>
+    <link rel="stylesheet" href="{% static 'corpus/style.css' %}" />
+  </head>
+  <body>
+    <header>
+      <a href="/">Corpus</a><span>Research coding workspace</span>
+      <nav>{% block navigation %}{% endblock %}</nav>
+    </header>
+    {% block content %}{% endblock %}
+  </body>
+</html>

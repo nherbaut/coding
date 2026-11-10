@@ -1,0 +1,114 @@
+"""Optional real-browser workflow. Run manage.py test corpus.browser_tests."""
+
+import os
+import uuid
+from django.contrib.auth import get_user_model
+from django.contrib.staticfiles.testing import StaticLiveServerTestCase
+from .importers import put_document
+from .models import Case, SharedCodebook
+
+
+class BrowserWorkflowTests(StaticLiveServerTestCase):
+    def test_assignment_to_codebook_merge(self):
+        from playwright.sync_api import sync_playwright
+
+        SharedCodebook.objects.create(
+            content=dict(
+                version=1,
+                codes=[
+                    dict(
+                        id=str(uuid.uuid4()),
+                        kind="code",
+                        name="Human review",
+                        parent=None,
+                        memo="Verified corpus excerpt",
+                        references=[],
+                    )
+                ],
+            )
+        )
+        case = Case.objects.create(key="browser", name="Example OSS project")
+        put_document(
+            "browser-document",
+            "AI_POLICY.md",
+            "Contributors must disclose AI use. Human review is required. 😀",
+            {"repository": "example/project"},
+            [case],
+        )
+        get_user_model().objects.create_superuser(
+            "test-admin", "test@example.org", "test-password"
+        )
+        with sync_playwright() as playwright:
+            options = {"headless": True}
+            if os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE"):
+                options["executable_path"] = os.environ[
+                    "PLAYWRIGHT_CHROMIUM_EXECUTABLE"
+                ]
+            browser = playwright.chromium.launch(**options)
+            admin = browser.new_page(viewport={"width": 1440, "height": 1000})
+            errors = []
+            admin.on("pageerror", lambda error: errors.append(str(error)))
+            admin.goto(self.live_server_url + "/admin/login/?next=/")
+            admin.get_by_label("Username:").fill("test-admin")
+            admin.get_by_label("Password:").fill("test-password")
+            admin.get_by_role("button", name="Log in").click()
+            admin.get_by_label("Coder name").fill("Browser Coder")
+            admin.get_by_label("Assigned cases").select_option(label=case.name)
+            admin.get_by_role("button", name="Create private link").click()
+            link = admin.locator(".notice").inner_text()
+            coder = browser.new_context(
+                viewport={"width": 1440, "height": 1000}
+            ).new_page()
+            coder.on("pageerror", lambda error: errors.append(str(error)))
+            coder.goto(link)
+            coder.wait_for_selector('#document:has-text("Contributors")')
+            coder.locator("#document").evaluate(
+                """node => {
+                const range = document.createRange();
+                range.setStart(node.firstChild, 0);
+                range.setEnd(node.firstChild, 12);
+                const selection = window.getSelection();
+                selection.removeAllRanges(); selection.addRange(range);
+                node.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+            }"""
+            )
+            coder.get_by_role("button", name="Add code", exact=True).click()
+            coder.get_by_label("Name", exact=True).fill("Disclosure requirement")
+            coder.get_by_label("Memo · quoted evidence and citation").fill(
+                '"Contributors" (AI_POLICY.md, selected passage).'
+            )
+            coder.get_by_label("Attach selected corpus excerpt as a reference").check()
+            coder.get_by_role("button", name="Save concept", exact=True).click()
+            coder.wait_for_function("!document.querySelector('#code-dialog').open")
+            coder.locator("#code-tree").get_by_label(
+                "Disclosure requirement", exact=True
+            ).check()
+            # Filtering the tree must preserve selected codes hidden by the search.
+            coder.get_by_label("Find a code").fill("Human")
+            coder.get_by_label("Annotation memo").fill("Coding evidence")
+            coder.get_by_role("button", name="Save annotation", exact=True).click()
+            coder.locator("#annotations").get_by_text(
+                "Coding evidence", exact=True
+            ).wait_for()
+            # Editing a saved annotation autosaves without an explicit save click.
+            coder.locator("#annotations").get_by_role(
+                "button", name="Edit", exact=True
+            ).click()
+            coder.get_by_label("Annotation memo").fill("Revised evidence")
+            coder.locator("#annotations").get_by_text(
+                "Revised evidence", exact=True
+            ).wait_for()
+            coder.once("dialog", lambda dialog: dialog.accept())
+            coder.get_by_role("button", name="Submit case", exact=True).click()
+            coder.wait_for_function(
+                "document.querySelector('#save-status').textContent === 'Case submitted'"
+            )
+            admin.goto(self.live_server_url + "/")
+            admin.get_by_role(
+                "link", name="Review submission", exact=False
+            ).first.click()
+            admin.locator("select[name^=action_]").select_option("accept")
+            admin.get_by_role("button", name="Apply review decisions").click()
+            admin.get_by_text("Codebook reviewed.", exact=False).wait_for()
+            self.assertEqual(errors, [])
+            browser.close()
