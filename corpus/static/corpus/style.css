@@ -525,3 +525,9 @@ dialog::backdrop {
 .annotation-context-menu .delete-annotation {
   color: #a52b22;
 }
+
+#document mark.annotation-selection {
+  background: Highlight;
+  color: HighlightText;
+  outline: 0;
+}

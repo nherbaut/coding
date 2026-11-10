@@ -76,6 +76,7 @@ async function openDocument(nextAssignment, nextDocument) {
   documentVersion = nextDocument;
   selected = null;
   editing = null;
+  chosenCodes.clear();
   $("#memo").value = "";
   render();
 }
@@ -168,8 +169,9 @@ function renderDraftStatus() {
         ? "Unsaved annotation. Click Save annotation to keep this highlight."
         : "Choose a code, then click Save annotation."
       : "";
-  $("#selection").hidden = !selected;
-  $("#selection").textContent = selected?.selected_text || "";
+  $("#selection").hidden = !selected || !chosenCodes.size;
+  $("#selection").textContent =
+    selected && chosenCodes.size ? selected.selected_text : "";
   $("#annotation-guidance").hidden = !$("#annotation-guidance").textContent;
   $("#save-annotation").disabled =
     !selected || !chosenCodes.size || !!assignment?.locked || busy;
@@ -186,8 +188,7 @@ function renderText() {
   );
   if (selected?.document === documentVersion.id && hasUnsavedAnnotation()) {
     annotations = annotations.filter((item) => item.id !== editing);
-    if (chosenCodes.size)
-      annotations.push({ ...selected, codes: [...chosenCodes], preview: true });
+    annotations.push({ ...selected, codes: [...chosenCodes], preview: true });
   }
   const points = [
     ...new Set([
@@ -202,10 +203,14 @@ function renderText() {
     const active = annotations.filter((a) => a.start < end && a.end > start);
     if (active.length) {
       const mark = element("mark", text.slice(start, end));
-      applyCodeColors(
-        mark,
-        active.flatMap((a) => a.codes),
-      );
+      if (active.some((item) => item.preview && !item.codes.length)) {
+        mark.classList.add("annotation-selection");
+      } else {
+        applyCodeColors(
+          mark,
+          active.flatMap((item) => item.codes),
+        );
+      }
       if (active.some((item) => item.preview))
         mark.classList.add("annotation-preview");
       mark.title = active
@@ -286,7 +291,7 @@ function renderCodes() {
         input.type = "checkbox";
         input.value = code.id;
         input.checked = chosen.has(code.id);
-        input.disabled = !!assignment?.locked || !!code.archived;
+        input.disabled = !selected || !!assignment?.locked || !!code.archived;
         input.onchange = () => {
           if (input.checked) chosenCodes.add(code.id);
           else chosenCodes.delete(code.id);
@@ -559,6 +564,9 @@ function captureSelection(event) {
     !root.contains(range.endContainer)
   )
     return;
+  const backward =
+    selection.anchorNode === range.endContainer &&
+    selection.anchorOffset === range.endOffset;
   const prefix = range.cloneRange();
   prefix.selectNodeContents(root);
   prefix.setEnd(range.startContainer, range.startOffset);
@@ -572,16 +580,17 @@ function captureSelection(event) {
     selected_text: documentVersion.text.slice(start, end),
   };
   editing = null;
-  const active = new Set(
-    state.codebook.codes
-      .filter((code) => !code.archived)
-      .map((code) => code.id),
-  );
-  chosenCodes = new Set([...chosenCodes].filter((id) => active.has(id)));
+  chosenCodes.clear();
+  $("#memo").value = "";
   renderCodes();
-  $("#selection").textContent = selected.selected_text;
-  selection.removeAllRanges();
   renderText();
+  const marks = root.querySelectorAll("mark.annotation-selection");
+  if (marks.length) {
+    const first = marks[0].firstChild;
+    const last = marks[marks.length - 1].firstChild;
+    if (backward) selection.setBaseAndExtent(last, last.length, first, 0);
+    else selection.setBaseAndExtent(first, 0, last, last.length);
+  }
   renderDraftStatus();
 }
 $("#document").addEventListener("mouseup", captureSelection);
@@ -605,6 +614,7 @@ async function saveAnnotation(extra, preserveEditor = false) {
     if (!preserveEditor && assignment === targetAssignment) {
       selected = null;
       editing = null;
+      chosenCodes.clear();
       $("#memo").value = "";
     }
     status("All changes saved");
@@ -632,6 +642,7 @@ $("#save-annotation").onclick = () => {
 $("#cancel-edit").onclick = () => {
   editing = null;
   selected = null;
+  chosenCodes.clear();
   $("#memo").value = "";
   render();
 };

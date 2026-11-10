@@ -147,6 +147,12 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
                 node.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
             }"""
             )
+            self.assertEqual(
+                coder.evaluate("window.getSelection().toString()"), "Contributors"
+            )
+            self.assertTrue(coder.locator("#selection").is_hidden())
+            self.assertEqual(coder.locator("#code-tree input:checked").count(), 0)
+            self.assertTrue(coder.locator("#save-annotation").is_disabled())
             coder.get_by_role("button", name="Add code", exact=True).click()
             options = coder.locator("#code-parent option").evaluate_all(
                 "nodes => nodes.map(node => ({id:node.value,label:node.textContent,path:node.title}))"
@@ -227,6 +233,25 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             self.assertEqual(
                 coder.locator("#document mark.annotation-preview").count(), 0
             )
+            self.assertEqual(coder.locator("#code-tree input:checked").count(), 0)
+            self.assertTrue(coder.locator("#code-tree input").first.is_disabled())
+            # Selecting another passage starts with no code and keeps its selection visible.
+            coder.locator("#document").evaluate(
+                """root=>{
+                const text=root.querySelector('mark').firstChild;
+                const selection=window.getSelection();
+                selection.setBaseAndExtent(text,4,text,0);
+                root.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
+            }"""
+            )
+            self.assertEqual(coder.evaluate("window.getSelection().toString()"), "Cont")
+            self.assertEqual(coder.locator("#code-tree input:checked").count(), 0)
+            self.assertTrue(coder.locator("#selection").is_hidden())
+            coder.locator("#cancel-edit").click()
+            self.assertEqual(
+                coder.locator("#document mark.annotation-preview").count(), 0
+            )
+
             self.assertEqual(
                 coder.locator("#annotation-count").inner_text(), "1 saved annotation"
             )
