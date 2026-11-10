@@ -475,7 +475,7 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             ).first.click()
             admin.locator("select[name^=action_]").select_option("accept")
             admin.get_by_role("button", name="Apply review decisions").click()
-            admin.get_by_text("Codebook reviewed.", exact=False).wait_for()
+            admin.get_by_text("Codebook review completed.", exact=False).wait_for()
             self.assertGreater(admin.locator(".fulltext mark").count(), 0)
             self.assertEqual(errors, [])
             browser.close()
