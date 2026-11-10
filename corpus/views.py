@@ -11,6 +11,7 @@ from functools import wraps
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db import transaction
 from django.db.models import Prefetch, Q
+from django.db.models.functions import Lower
 from django.core.validators import validate_email
 from django.http import JsonResponse, HttpResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
@@ -114,9 +115,11 @@ def workspace(request):
 def state(request):
     session = current_session(request)
     assignments = []
-    for a in Assignment.objects.filter(
-        session=session, removed_at__isnull=True
-    ).select_related("case"):
+    for a in (
+        Assignment.objects.filter(session=session, removed_at__isnull=True)
+        .select_related("case")
+        .order_by(Lower("case__name"), "case__name", "pk")
+    ):
         assignments.append(
             dict(
                 id=a.pk,
@@ -446,7 +449,7 @@ def dashboard(request):
         "corpus/dashboard.html",
         dict(
             notice=notice,
-            cases=Case.objects.all(),
+            cases=Case.objects.order_by(Lower("name"), "name", "pk"),
             sessions=CodingSession.objects.filter(
                 deleted_at__isnull=True
             ).prefetch_related(
@@ -458,7 +461,9 @@ def dashboard(request):
             ),
             assignments=Assignment.objects.filter(
                 removed_at__isnull=True, session__deleted_at__isnull=True
-            ).select_related("session", "case"),
+            )
+            .select_related("session", "case")
+            .order_by(Lower("case__name"), Lower("session__coder"), "pk"),
             submissions=Submission.objects.select_related(
                 "assignment__session", "assignment__case", "email_notification"
             )

@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 from cryptography.fernet import Fernet
 from django.conf import settings
 from django.core.validators import validate_email
+from django.db.models.functions import Lower
 from .models import InvitationEmail
 
 
@@ -37,7 +38,7 @@ def _queue_invitation_email(session, link):
     assignments = (
         session.assignment_set.filter(locked=False, removed_at__isnull=True)
         .select_related("case")
-        .order_by("case__name")
+        .order_by(Lower("case__name"), "case__name", "pk")
     )
     case_list = "\n".join(
         "- " + " ".join(item.case.name.splitlines()) for item in assignments
