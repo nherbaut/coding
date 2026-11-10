@@ -125,3 +125,25 @@ Enter the optional coder email when creating a session to queue an invitation co
 For an existing session, enter or update its email and click **Generate and email new link**. This replaces the previous private URL and invalidates existing browser sessions using that URL. Coding, codebook edits and assignments stay attached to the same session. The invitation includes its currently unfinished cases. Adding cases later can be followed by sending another invitation.
 
 Invitations use the same SMTP settings and retry worker as case-submission notifications. Pending invitation bodies are encrypted using a key derived from `DJANGO_SECRET_KEY`, and cleared after SMTP accepts them. Revoking or replacing a link cancels its pending invitations. The session card shows the latest invitation delivery status. Keep `DJANGO_SECRET_KEY` stable while invitations are pending. If that key changes, generate a new invitation for pending messages.
+
+## Coding reports and coder comparison
+
+Administrators can open **Coding reports** from the dashboard, or **Compare coding** from a submission review. Reports use the latest available submission for each coding session and case by default. Repeated submissions are not counted twice. Choose **Current work (including drafts)** explicitly to inspect live coding instead.
+
+**Document comparison** shows two coders' original texts, color highlights, codes and annotation memos side by side. Select the case, coders and document, then click **Compare**. Clicking a highlight opens its evidence card; **Locate passage** returns to its text. Matching document versions support synchronized scrolling and a passage table split at selection boundaries, including partial overlaps and passages coded by only one coder. Different versions are labelled and are never aligned by their offsets. The table compares code identities; it does not calculate inter-coder agreement or infer equivalent concepts from their names.
+
+**Codebook evidence** lists codes and categories with supporting excerpts, source memos, references and separate researcher rationale. Filter by case, coding session, document and code/category. Each passage retains the coder, case, document version/hash, selected source text, UTF-16 offsets, memo and submission provenance. Personal definitions that differ across sessions remain inspectable.
+
+Counts use one annotation per coding session as one coded passage. Overlapping annotations remain separate. Documents and cases are distinct source identities; document-version counts are available separately. Coder counts are distinct coding sessions, including separate sessions with the same display name. Direct counts exclude descendants. Category/parent rollups include descendant codes but count an annotation only once, even if it carries multiple descendant codes. Zero-count concepts remain in the table.
+
+**Original coder codes** aggregate permanent code UUIDs and preserve each coder's own names, hierarchy and definitions on their evidence. Same-name codes with different identities remain separate. **Accepted shared concepts** uses recorded review mappings and existing shared identities with the captured shared hierarchy. Unmapped proposals remain explicitly separate; mappings from older submissions are never applied to live drafts.
+
+Use **Save report snapshot** to capture a named, immutable report. The saved payload includes the selected coding versions, personal codebooks, document texts and metadata, shared codebook revision, mappings, scope and capture time. Subsequent coding, imports or shared-codebook reviews do not modify a saved report. Saved reports are listed at the bottom of the report page and are included in normal PostgreSQL backups. The JSON `schema_version` describes the report payload format.
+
+Reports export as a standalone **HTML** document with embedded styles, **Excerpts CSV**, **Counts CSV**, and full-provenance **JSON**. **Print / PDF** uses the browser's print dialog. CSV values that look like spreadsheet formulas are escaped for safe opening; JSON preserves the original text. Generate and save the report before final analysis to freeze its inputs. Exports contain research data and are protected by the same administrator authentication as submission reviews.
+
+For the optional report browser check:
+
+```sh
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome python manage.py test corpus.browser_reporting_tests
+```

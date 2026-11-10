@@ -159,3 +159,16 @@ class InvitationEmail(EmailDelivery):
         if self.token_hash != self.session.token_hash:
             return "Replaced"
         return super().status
+
+
+class CodingReport(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200)
+    created = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey("auth.User", on_delete=models.PROTECT)
+    payload = models.JSONField()
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValueError("Saved reports are immutable")
+        return super().save(*args, **kwargs)

@@ -1,0 +1,60 @@
+{% extends report_base %}{% load static %}
+{% block navigation %}<a href="/">Dashboard</a><a href="{% url 'coding-report' %}">New report</a>{% endblock %}
+{% block content %}
+{% if not portable %}<link rel="stylesheet" href="{% static 'corpus/reports.css' %}">{% endif %}
+<main class="coding-report">
+  <div class="report-heading"><div><h1>{% if saved %}{{ saved.name }}{% else %}Coding report{% endif %}</h1>
+    <p>Captured {{ payload.generated_at }} · {% if filters.source == 'submitted' %}Latest submitted version per coder and case{% else %}Current work · includes work in progress{% endif %}</p>
+    <p>{% if filters.mode == 'shared' %}Accepted shared concepts. Unmapped personal concepts remain separate.{% else %}Original code identities. Same names alone do not combine concepts.{% endif %}</p>
+  </div>{% if not portable %}<div class="report-downloads"><a href="{{ download_base }}format=html">Download HTML</a><a href="{{ download_base }}format=csv">Excerpts CSV</a><a href="{{ download_base }}format=summary-csv">Counts CSV</a><a href="{{ download_base }}format=json">Full JSON</a><button type="button" id="print-report" class="secondary">Print / PDF</button></div>{% endif %}</div>
+  {% if not portable %}
+  {% if not saved %}
+  <form method="get" class="report-controls"><input type="hidden" name="view" value="{{ view }}">
+    <label>Case<select name="case"><option value="">All cases</option>{% for case in cases %}<option value="{{ case.pk }}" {% if filters.case == case.pk %}selected{% endif %}>{{ case.name }}</option>{% endfor %}</select></label>
+    <label>Coder session<select name="coder"><option value="">All coders</option>{% for coder in coders %}<option value="{{ coder.pk }}" {% if filters.coder == coder.pk|stringformat:'s' %}selected{% endif %}>{{ coder.coder }} · session {{ forloop.counter }}</option>{% endfor %}</select></label>
+    <label>Document<select name="document"><option value="">All documents</option>{% for document in documents %}<option value="{{ document.key }}" {% if filters.document == document.key %}selected{% endif %}>{{ document.name }}</option>{% endfor %}</select></label>
+    <label>Coding version<select name="source"><option value="submitted" {% if filters.source == 'submitted' %}selected{% endif %}>Latest submissions</option><option value="current" {% if filters.source == 'current' %}selected{% endif %}>Current work (including drafts)</option></select></label>
+    <label>Code identities<select name="mode"><option value="original" {% if filters.mode == 'original' %}selected{% endif %}>Original coder codes</option><option value="shared" {% if filters.mode == 'shared' %}selected{% endif %}>Accepted shared concepts</option></select></label>
+    <button>Update report</button>
+  </form>
+  <form method="post" class="save-report">{% csrf_token %}
+    {% for key,value in filters.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+    <input type="hidden" name="code" value="{{ selected_code }}">
+    <label>Report name<input name="name" maxlength="200" placeholder="e.g. Final coding · November"></label><button>Save report snapshot</button>
+    <p>Captures the selected submissions, codebooks, mappings and document versions. Later edits do not change this report.</p>
+  </form>
+  {% else %}<div class="report-notice">Saved snapshot. Its coding, documents and shared mappings are frozen. You can explore the saved evidence below.</div>{% endif %}
+  <nav class="report-tabs" aria-label="Report views"><a href="{{ codes_url }}" {% if view == 'codes' %}aria-current="page"{% endif %}>Codebook evidence</a><a href="{{ compare_url }}" {% if view == 'compare' %}aria-current="page"{% endif %}>Document comparison</a></nav>
+  {% endif %}
+  <section class="report-metrics" aria-label="Coding counts"><div><strong>{{ totals.passages }}</strong>Coded passages</div><div><strong>{{ totals.documents }}</strong>Documents</div><div><strong>{{ totals.cases }}</strong>Cases</div><div><strong>{{ totals.coders }}</strong>Coder sessions</div></section>
+  <p class="report-explanation">A passage is one coder’s annotation. Overlaps and independent coding by different coders remain separate. Documents are counted by source identity; {{ totals.document_versions }} document version{{ totals.document_versions|pluralize }} represented. Category totals include descendants and count each annotation once.</p>
+  {% if payload.missing %}<details class="report-notice"><summary>{{ payload.missing|length }} assignment{{ payload.missing|length|pluralize }} without an available submission</summary><ul>{% for item in payload.missing %}<li>{{ item.coder }} · {{ item.case }}</li>{% endfor %}</ul></details>{% endif %}
+  {% if source_records == 0 %}<p class="report-notice">No coding versions match this scope. Submit cases or choose Current work to inspect drafts.</p>{% endif %}
+  {% if not portable %}<form method="get" class="report-code-filter">
+    {% for key,value in filters.items %}{% if key != 'code' %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}{% endfor %}<input type="hidden" name="view" value="{{ view }}">
+    <label>Code or category<select name="code" aria-label="Code or category"><option value="">All concepts</option>{% for concept in concepts %}<option value="{{ concept.key }}" {% if selected_code == concept.key %}selected{% endif %}>{{ concept.path }}{% if concept.unmapped %} · not mapped{% endif %}</option>{% endfor %}</select></label><button>Filter evidence</button>
+  </form>
+  {% endif %}
+  {% if view == 'compare' %}
+    {% include 'corpus/report_comparison.html' %}
+  {% else %}
+  <h2>Codebook evidence</h2>
+  {% if selected %}<section class="report-concept"><h3>{{ selected.path }}</h3>{% if selected.unmapped %}<p>Personal concept · no accepted shared mapping.</p>{% endif %}
+    {% if selected.memo %}<h4>Source memo</h4><blockquote>{{ selected.memo }}</blockquote>{% endif %}
+    {% if selected.rationale %}<h4>Researcher rationale</h4><p class="report-text">{{ selected.rationale }}</p>{% endif %}
+    {% if selected.references %}<h4>References</h4><p class="report-text">{{ selected.references }}</p>{% endif %}
+    {% if selected.variants %}<p class="report-notice">This code has different definitions or hierarchy paths in the captured personal codebooks. They remain documented separately below.</p>{% endif %}
+    <details><summary>Definitions in personal codebooks</summary>{% for definition in selected.definitions %}<article><h4>{{ definition.coder }} · {{ definition.path }}</h4>{% if definition.memo %}<blockquote>{{ definition.memo }}</blockquote>{% endif %}{% if definition.rationale %}<p class="report-text">Researcher rationale: {{ definition.rationale }}</p>{% endif %}{% if definition.reference_text %}<p class="report-text">{{ definition.reference_text }}</p>{% endif %}</article>{% empty %}<p>Shared concept; no personal definition in this scope.</p>{% endfor %}</details>
+  </section>{% endif %}
+  <div class="report-table-wrap"><table class="report-counts"><caption>Counts by code and category</caption><thead><tr><th>Code / category</th><th>Direct passages</th><th>Including descendants</th><th>Documents</th><th>Cases</th><th>Coders</th></tr></thead><tbody>{% for concept in concepts %}<tr {% if selected_code == concept.key %}class="selected-concept"{% endif %}><th>{% if portable %}{{ concept.path }}{% else %}<a href="{{ concept.href }}">{{ concept.path }}</a>{% endif %}{% if concept.unmapped %}<small>Not mapped</small>{% endif %}{% if concept.variants %}<small>Personal definitions vary</small>{% endif %}</th><td>{{ concept.direct_count }}</td><td>{{ concept.counts.passages }}</td><td>{{ concept.counts.documents }}</td><td>{{ concept.counts.cases }}</td><td>{{ concept.counts.coders }}</td></tr>{% empty %}<tr><td colspan="6">No concepts in this scope.</td></tr>{% endfor %}</tbody></table></div>
+  <h2>Supporting excerpts{% if selected %} · {{ selected.name }}{% endif %}</h2>
+  <div class="report-excerpts">{% for excerpt in excerpts %}{% include 'corpus/report_excerpt.html' %}{% empty %}<p>No coded passages match this selection.</p>{% endfor %}</div>
+  {% endif %}
+  {% if portable %}<section><h2>Codebook definitions and references</h2>{% for concept in concepts %}<article class="report-concept"><h3>{{ concept.path }}</h3>{% if concept.memo %}<blockquote>{{ concept.memo }}</blockquote>{% endif %}{% if concept.rationale %}<p class="report-text">Researcher rationale: {{ concept.rationale }}</p>{% endif %}{% if concept.references %}<p class="report-text">{{ concept.references }}</p>{% endif %}{% if concept.variants %}<p>Personal definitions vary:</p>{% for definition in concept.definitions %}<h4>{{ definition.coder }} · {{ definition.path }}</h4><blockquote>{{ definition.memo }}</blockquote><p class="report-text">{{ definition.rationale }}</p><p class="report-text">{{ definition.reference_text }}</p>{% endfor %}{% endif %}</article>{% endfor %}</section>{% endif %}
+  <details class="report-provenance"><summary>Report provenance</summary><p>Passage positions use UTF-16 offsets from the immutable source text. Original codebooks and structured reference metadata are included in the JSON export.</p>
+    {% for record in payload.records %}<article><h3>{{ record.coder }} · {{ record.case }}</h3><p>{% if record.submission %}Submitted {{ record.submitted_at }}{% if not record.locked %} · case subsequently reopened{% endif %}{% else %}Current work captured {{ payload.generated_at }}{% endif %}</p><ul>{% for document in record.documents %}<li>{{ document.name }}<details><summary>Document fingerprint</summary><code>{{ document.hash }}</code></details></li>{% endfor %}</ul></article>{% endfor %}
+  </details>
+  {% if not portable and not saved %}<details><summary>Saved reports</summary><ul>{% for item in reports %}<li><a href="{% url 'saved-report' item.pk %}">{{ item.name }}</a> · {{ item.created }}</li>{% empty %}<li>No saved reports yet.</li>{% endfor %}</ul></details>{% endif %}
+</main>
+{% if not portable %}<script src="{% static 'corpus/reports.js' %}" defer></script>{% endif %}
+{% endblock %}

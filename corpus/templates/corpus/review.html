@@ -1,4 +1,4 @@
-{% extends 'corpus/base.html' %}{% load static %}{% block navigation %}<a href="/">Dashboard</a
+{% extends 'corpus/base.html' %}{% load static %}{% block navigation %}<a href="{% url 'coding-report' %}?case={{ submission.assignment.case_id }}&amp;view=compare">Compare coding</a><a href="/">Dashboard</a
 ><a href="{% url 'results' submission.pk %}">Export JSON</a
 ><a href="{% url 'results' submission.pk %}?format=csv">Export CSV</a>{% endblock %}{% block content %}
 <main class="dashboard">

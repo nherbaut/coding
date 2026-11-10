@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.urls import path
 from django.views.generic import RedirectView
 from corpus import views
+from corpus.reporting_views import coding_report
 
 urlpatterns = [
     path("healthz/", views.health),
@@ -16,6 +17,8 @@ urlpatterns = [
     path("api/assignments/<int:assignment_id>/submit/", views.complete),
     path("api/codebook/", views.codebook),
     path("work/codebook.yaml", views.personal_export),
+    path("review/reports/", coding_report, name="coding-report"),
+    path("review/reports/<uuid:report_id>/", coding_report, name="saved-report"),
     path("review/<int:submission_id>/", views.review, name="review"),
     path("exports/shared.yaml", views.shared_export),
     path(
