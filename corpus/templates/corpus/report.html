@@ -1,7 +1,7 @@
 {% extends report_base %}{% load static %}
 {% block navigation %}<a href="/">Dashboard</a><a href="{% url 'coding-report' %}">New report</a>{% endblock %}
 {% block content %}
-{% if not portable %}<link rel="stylesheet" href="{% static 'corpus/reports.css' %}">{% endif %}
+{% if not portable %}<link rel="stylesheet" href="{% static 'corpus/reports.css' %}"><link rel="stylesheet" href="{% static 'corpus/markdown.css' %}">{% endif %}
 <main class="coding-report">
   <div class="report-heading"><div><h1>{% if saved %}{{ saved.name }}{% else %}Coding report{% endif %}</h1>
     <p>Captured {{ payload.generated_at }} · {% if filters.source == 'submitted' %}Latest submitted version per coder and case{% else %}Current work · includes work in progress{% endif %}</p>
@@ -56,5 +56,7 @@
   </details>
   {% if not portable and not saved %}<details><summary>Saved reports</summary><ul>{% for item in reports %}<li><a href="{% url 'saved-report' item.pk %}">{{ item.name }}</a> · {{ item.created }}</li>{% empty %}<li>No saved reports yet.</li>{% endfor %}</ul></details>{% endif %}
 </main>
-{% if not portable %}<script src="{% static 'corpus/reports.js' %}" defer></script>{% endif %}
+{{ reading_documents|json_script:"reading-documents" }}
+{% if portable %}<script>{{ markdown_script|safe }}</script><script>{{ reading_script|safe }}</script>{% else %}
+<script src="{% static 'corpus/markdown.js' %}" defer></script><script src="{% static 'corpus/reading.js' %}" defer></script><script src="{% static 'corpus/reports.js' %}" defer></script>{% endif %}
 {% endblock %}

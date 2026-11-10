@@ -1,6 +1,7 @@
 {% extends 'corpus/base.html' %}{% load static %}{% block navigation %}<a href="{% url 'coding-report' %}?case={{ submission.assignment.case_id }}&amp;view=compare">Compare coding</a><a href="/">Dashboard</a
 ><a href="{% url 'results' submission.pk %}">Export JSON</a
 ><a href="{% url 'results' submission.pk %}?format=csv">Export CSV</a>{% endblock %}{% block content %}
+<link rel="stylesheet" href="{% static 'corpus/markdown.css' %}">
 <main class="dashboard">
   <h1>{{ snapshot.coder }} · {{ snapshot.case }}</h1>
   <p>Submitted {{ submission.created }}</p>
@@ -59,7 +60,7 @@
     <p>
       {{ annotation.document_name }}
     </p>
-    <blockquote style="{{ annotation.highlight_style }}">{{ annotation.selected_text }}</blockquote>
+    <blockquote data-reading-document="{{ annotation.document }}" data-reading-start="{{ annotation.start }}" data-reading-end="{{ annotation.end }}" style="{{ annotation.highlight_style }}">{{ annotation.selected_text }}</blockquote>
     <p>
       {% for code in snapshot.codebook.codes %}{% if code.id in annotation.codes %}<span class="tag" style="{{ code.highlight_style }}">{{ code.name }}</span>{% endif %}{% endfor %}
     </p>
@@ -69,12 +70,15 @@
   <p>No passages coded in this submission.</p>
   {% endfor %}
   <h2>Document texts</h2>
-  {% for name,text in documents.items %}
-  <details>
-    <summary>{{ name }}</summary>
-    <pre class="fulltext">{% for segment in text %}{% if segment.style %}<mark style="{{ segment.style }}" title="{{ segment.title }}">{{ segment.text }}</mark>{% else %}{{ segment.text }}{% endif %}{% endfor %}</pre>
-  </details>
+  {% for document in reading_documents %}
+  <details><summary>{{ document.name }}</summary><section class="reading-document" data-reading-key="{{ document.key }}">
+    <label class="document-view-control">Reading view<select class="reading-view" aria-label="Reading view"><option value="rendered">Rendered text</option><option value="source">Source text</option></select></label>
+    <div class="fulltext reading-text" tabindex="0">{{ document.text }}</div>
+  </section></details>
   {% endfor %}
 </main>
+{{ reading_documents|json_script:"reading-documents" }}
+<script src="{% static 'corpus/markdown.js' %}" defer></script>
+<script src="{% static 'corpus/reading.js' %}" defer></script>
 <script src="{% static 'corpus/review.js' %}" defer></script>
 {% endblock %}

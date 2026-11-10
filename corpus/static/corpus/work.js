@@ -2,6 +2,7 @@
 const $ = (selector) => document.querySelector(selector);
 const csrf = $("[name=csrfmiddlewaretoken]").value;
 let chosenCodes = new Set();
+const documentViews = new Map();
 let state,
   assignment,
   documentVersion,
@@ -174,7 +175,13 @@ function renderDraftStatus() {
       : "";
   $("#selection").hidden = !selected || !chosenCodes.size;
   $("#selection").textContent =
-    selected && chosenCodes.size ? selected.selected_text : "";
+    selected && chosenCodes.size
+      ? CorpusMarkdown.visibleText(
+          $("#document"),
+          selected.start,
+          selected.end,
+        ) || selected.selected_text
+      : "";
   $("#annotation-guidance").hidden = !$("#annotation-guidance").textContent;
   $("#save-annotation").disabled =
     !selected || !chosenCodes.size || !!assignment?.locked || busy;
@@ -193,19 +200,21 @@ function renderText() {
     annotations = annotations.filter((item) => item.id !== editing);
     annotations.push({ ...selected, codes: [...chosenCodes], preview: true });
   }
-  const points = [
-    ...new Set([
-      0,
-      text.length,
-      ...annotations.flatMap((a) => [a.start, a.end]),
-    ]),
-  ].sort((a, b) => a - b);
-  for (let i = 0; i < points.length - 1; i++) {
-    const start = points[i],
-      end = points[i + 1];
-    const active = annotations.filter((a) => a.start < end && a.end > start);
-    if (active.length) {
-      const mark = element("mark", text.slice(start, end));
+  const formatted =
+    documentViews.get(documentVersion.id) ??
+    CorpusMarkdown.isMarkdown(
+      documentVersion.name,
+      documentVersion.metadata,
+      documentVersion.text,
+    );
+  $("#document-view").value = formatted ? "rendered" : "source";
+  CorpusMarkdown.render(
+    root,
+    text,
+    annotations,
+    (textNode, active) => {
+      const mark = element("mark");
+      mark.append(textNode);
       if (active.some((item) => item.preview && !item.codes.length)) {
         mark.classList.add("annotation-selection");
       } else {
@@ -250,9 +259,10 @@ function renderText() {
           }
         };
       }
-      root.append(mark);
-    } else root.append(document.createTextNode(text.slice(start, end)));
-  }
+      return mark;
+    },
+    formatted,
+  );
 }
 const termOrder = new Intl.Collator("en", {
   sensitivity: "base",
@@ -345,7 +355,11 @@ function renderAnnotations() {
     (a) => a.document === documentVersion?.id,
   ) || []) {
     const card = element("article", undefined, "annotation");
-    const quote = element("blockquote", a.selected_text);
+    const quote = element(
+      "blockquote",
+      CorpusMarkdown.visibleText($("#document"), a.start, a.end) ||
+        a.selected_text,
+    );
     applyCodeColors(quote, a.codes);
     card.append(quote);
     for (const id of a.codes) {
@@ -525,9 +539,7 @@ function openAnnotationMemos(annotations) {
     card.append(label);
     const feedback = element(
       "p",
-      owner.locked
-        ? "Submitted case. Use Unsubmit case to edit memos."
-        : "",
+      owner.locked ? "Submitted case. Use Unsubmit case to edit memos." : "",
       "memo-save-status",
     );
     feedback.setAttribute("role", "status");
@@ -621,11 +633,9 @@ function captureSelection(event) {
   const backward =
     selection.anchorNode === range.endContainer &&
     selection.anchorOffset === range.endOffset;
-  const prefix = range.cloneRange();
-  prefix.selectNodeContents(root);
-  prefix.setEnd(range.startContainer, range.startOffset);
-  const start = prefix.toString().length,
-    end = start + range.toString().length;
+  const offsets = CorpusMarkdown.selectionOffsets(root, range);
+  if (!offsets) return;
+  const { start, end } = offsets;
   selected = {
     document: documentVersion.id,
     document_hash: documentVersion.hash,
@@ -638,15 +648,19 @@ function captureSelection(event) {
   $("#memo").value = "";
   renderCodes();
   renderText();
-  const marks = root.querySelectorAll("mark.annotation-selection");
-  if (marks.length) {
-    const first = marks[0].firstChild;
-    const last = marks[marks.length - 1].firstChild;
-    if (backward) selection.setBaseAndExtent(last, last.length, first, 0);
-    else selection.setBaseAndExtent(first, 0, last, last.length);
-  }
+  CorpusMarkdown.restoreSelection(root, start, end, backward);
   renderDraftStatus();
 }
+$("#document-view").onchange = () => {
+  if (!documentVersion) return;
+  documentViews.set(
+    documentVersion.id,
+    $("#document-view").value === "rendered",
+  );
+  renderText();
+  renderAnnotations();
+  renderDraftStatus();
+};
 $("#document").addEventListener("mouseup", captureSelection);
 $("#document").addEventListener("keyup", captureSelection);
 async function saveAnnotation(extra, preserveEditor = false) {
@@ -702,10 +716,19 @@ $("#cancel-edit").onclick = () => {
 };
 $("#code-search").oninput = renderCodes;
 $("#unsubmit-case").onclick = async () => {
-  if (busy || !assignment?.locked || !confirm("Unsubmit this case and reopen it for editing? The previous submission remains in the coding archive.")) return;
+  if (
+    busy ||
+    !assignment?.locked ||
+    !confirm(
+      "Unsubmit this case and reopen it for editing? The previous submission remains in the coding archive.",
+    )
+  )
+    return;
   busy = true;
   try {
-    await api(`/api/assignments/${assignment.id}/unsubmit/`, { revision: assignment.revision });
+    await api(`/api/assignments/${assignment.id}/unsubmit/`, {
+      revision: assignment.revision,
+    });
     selected = null;
     editing = null;
     chosenCodes.clear();

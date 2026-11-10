@@ -140,8 +140,9 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             coder.locator("#document").evaluate(
                 """node => {
                 const range = document.createRange();
-                range.setStart(node.firstChild, 0);
-                range.setEnd(node.firstChild, 12);
+                const text = document.createTreeWalker(node, NodeFilter.SHOW_TEXT).nextNode();
+                range.setStart(text, 0);
+                range.setEnd(text, 12);
                 const selection = window.getSelection();
                 selection.removeAllRanges(); selection.addRange(range);
                 node.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
@@ -478,6 +479,7 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
                 "link", name="Review submission", exact=False
             ).first.click()
             decisions = admin.locator("select[name^=action_]")
+            decisions.first.wait_for()
             count = decisions.count()
             self.assertGreater(count, 1)
             decisions.first.select_option("reject")

@@ -7,3 +7,5 @@ staticfiles
 .venv-web
 research
 *.sql
+
+frontend/node_modules

@@ -167,3 +167,26 @@ Optional browser check:
 ```sh
 PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome python manage.py test corpus.browser_removal_tests
 ```
+
+## Markdown reading and coding
+
+Markdown documents open as **Rendered text** in the coder workspace, submission review and report document viewers. Headings, emphasis, lists, links, tables, blockquotes, code blocks and safe embedded HTML are formatted. Documents are recognized by their Markdown filename/source metadata or by Markdown structure in the content. Plain text stays plain. **Reading view → Source text** shows the canonical source whenever needed. Image descriptions remain selectable text; rendering does not fetch remote images.
+
+Passage positions and document hashes refer to the original immutable source. The browser renderer maps visible UTF-16 text positions back to that source, including formatting delimiters, escapes, entities, emoji and list/blockquote prefixes. Selecting across formatting can therefore produce an exported source excerpt containing Markdown syntax, while the reading screen displays its visible text. Source text, hashes and stored annotations are never rewritten to render a document. Embedded HTML is rebuilt from an allowlist of elements; scripts, event handlers and unsafe links are excluded.
+
+Downloaded HTML reports include the renderer and styles so formatted document comparisons work offline. CSV and JSON retain the original source text and source offsets for reproducibility.
+
+The browser bundle and third-party license notices are committed under `corpus/static/corpus/`. Docker deployment needs no Node installation. To change and rebuild the renderer, use Node 22 or newer:
+
+```sh
+cd frontend
+npm ci
+npm test
+npm run build
+```
+
+The lockfile pins parser/build dependencies. `frontend/build.mjs` generates `markdown.js` and `markdown.LICENSE.txt`. The optional browser regression checks formatted passage selection, overlapping highlights, Unicode/entities, source switching, sanitized HTML, review views and offline reports:
+
+```sh
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome python manage.py test corpus.browser_markdown_tests
+```

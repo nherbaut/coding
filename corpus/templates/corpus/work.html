@@ -2,6 +2,7 @@
   >{{ coder }}</span
 ><a href="/work/codebook.yaml">Export YAML</a
 ><button id="open-book" class="secondary">Edit codebook</button>{% endblock %}{% block content %}
+<link rel="stylesheet" href="{% static 'corpus/markdown.css' %}">
 <form hidden>{% csrf_token %}</form>
 <div class="workbar">
   <strong id="case-title">Loading workspace…</strong
@@ -19,6 +20,7 @@
       <summary>Document metadata</summary>
       <pre id="metadata"></pre>
     </details>
+    <label class="document-view-control">Reading view<select id="document-view" aria-label="Reading view"><option value="rendered">Rendered text</option><option value="source">Source text</option></select></label>
     <div id="document" tabindex="0"></div>
     <h2>Passage annotations</h2>
     <div id="annotations"></div>
@@ -93,5 +95,6 @@
     <p id="code-status" role="status"></p>
   </form>
 </dialog>
+<script src="{% static 'corpus/markdown.js' %}" defer></script>
 <script src="{% static 'corpus/work.js' %}" defer></script>
 {% endblock %}

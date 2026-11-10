@@ -522,14 +522,20 @@ def review(request, submission_id):
         code["highlight_style"] = (
             highlight_style([code_color(code)]) if code["kind"] == "code" else ""
         )
-    documents = {
-        d.document.name: highlighted_segments(
-            d.text,
-            [a for a in snapshot["annotations"] if a["document"] == d.pk],
-            snapshot["codebook"]["codes"],
+    reading_documents = [
+        dict(
+            key=str(d.pk),
+            name=d.document.name,
+            text=d.text,
+            metadata=d.metadata,
+            annotations=[a for a in snapshot["annotations"] if a["document"] == d.pk],
+            colors={
+                code["id"]: code_color(code) for code in snapshot["codebook"]["codes"]
+            },
+            labels={code["id"]: code["name"] for code in snapshot["codebook"]["codes"]},
         )
-        for d in submission.assignment.documents.all()
-    }
+        for d in submission.assignment.documents.select_related("document")
+    ]
     return render(
         request,
         "corpus/review.html",
@@ -538,7 +544,7 @@ def review(request, submission_id):
             changes=changes,
             shared=shared,
             snapshot=snapshot,
-            documents=documents,
+            reading_documents=reading_documents,
             mapping_options=mapping_options,
             withdrawn=hasattr(submission, "withdrawal"),
             audit=MergeAudit.objects.filter(submission=submission).first(),

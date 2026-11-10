@@ -184,6 +184,50 @@ def coding_report(request, report_id=None):
     compare_params["view"] = "compare"
     query = params.urlencode()
     download_base = request.path + ("?" + query + "&" if query else "?")
+    needed = {(e["record"], e["document_version"]) for e in rows}
+    needed.update(
+        (pane["record"]["key"], pane["document"]["id"])
+        for pane in comparison["panes"]
+        if pane and pane["document"]
+    )
+    reading_documents = []
+    for record in payload["records"]:
+        for document in record["documents"]:
+            if (record["key"], document["id"]) not in needed:
+                continue
+            annotations = [
+                e
+                for e in rows
+                if e["record"] == record["key"]
+                and e["document_version"] == document["id"]
+            ]
+            reading_documents.append(
+                dict(
+                    key=record["key"] + ":" + str(document["id"]),
+                    name=document["name"],
+                    text=document["text"],
+                    metadata=document["metadata"],
+                    annotations=[
+                        dict(
+                            id=e["key"],
+                            start=e["start"],
+                            end=e["end"],
+                            codes=e["direct"],
+                        )
+                        for e in annotations
+                    ],
+                    colors={
+                        code["key"]: code["color"]
+                        for e in annotations
+                        for code in e["codes"]
+                    },
+                    labels={
+                        code["key"]: code["path"]
+                        for e in annotations
+                        for code in e["codes"]
+                    },
+                )
+            )
     context = dict(
         saved=saved,
         payload=payload,
@@ -204,6 +248,7 @@ def coding_report(request, report_id=None):
         download_base=download_base,
         report_base="corpus/base.html",
         code_query=query,
+        reading_documents=reading_documents,
         source_records=len(payload["records"]),
         codes_url=request.path + "?" + codes_params.urlencode(),
         compare_url=request.path + "?" + compare_params.urlencode(),
@@ -239,7 +284,14 @@ def coding_report(request, report_id=None):
         context.update(
             report_base="corpus/report_export_base.html",
             portable=True,
-            report_css=Path(finders.find("corpus/reports.css")).read_text(),
+            report_css=Path(finders.find("corpus/reports.css")).read_text()
+            + Path(finders.find("corpus/markdown.css")).read_text(),
+            markdown_script=Path(finders.find("corpus/markdown.js"))
+            .read_text()
+            .replace("</script", "<\\/script"),
+            reading_script=Path(finders.find("corpus/reading.js"))
+            .read_text()
+            .replace("</script", "<\\/script"),
         )
         return attachment(
             render_to_string("corpus/report.html", context, request=request),
