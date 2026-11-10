@@ -1,4 +1,4 @@
-{% extends 'corpus/base.html' %}{% block navigation %}<a href="/">Dashboard</a
+{% extends 'corpus/base.html' %}{% load static %}{% block navigation %}<a href="/">Dashboard</a
 ><a href="{% url 'results' submission.pk %}">Export JSON</a
 ><a href="{% url 'results' submission.pk %}?format=csv">Export CSV</a>{% endblock %}{% block content %}
 <main class="dashboard">
@@ -10,7 +10,11 @@
   </div>
   {% else %}
   <h2>Codebook changes</h2>
-  <form method="post">
+  <form method="post" id="codebook-review">
+    {% if changes %}<div class="review-batch-actions">
+      <button type="button" id="accept-all-proposals">Accept all proposals</button>
+      <p id="review-batch-status" role="status">Choose decisions below, then apply them to save.</p>
+    </div>{% endif %}
     {% csrf_token %}<input
       type="hidden"
       name="revision"
@@ -71,4 +75,5 @@
   </details>
   {% endfor %}
 </main>
+<script src="{% static 'corpus/review.js' %}" defer></script>
 {% endblock %}

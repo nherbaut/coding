@@ -430,6 +430,10 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             ][0]["annotations"]
             self.assertEqual([item["id"] for item in remaining], [kept_id])
             coder.once("dialog", lambda dialog: dialog.accept())
+            coder.get_by_role("button", name="Add code", exact=True).click()
+            coder.get_by_label("Name", exact=True).fill("Additional review concept")
+            coder.get_by_role("button", name="Save concept", exact=True).click()
+            coder.wait_for_function("!document.querySelector('#code-dialog').open")
             coder.get_by_role("button", name="Submit case", exact=True).click()
             coder.wait_for_function(
                 "document.querySelector('#save-status').textContent === 'Case submitted'"
@@ -473,7 +477,18 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             admin.get_by_role(
                 "link", name="Review submission", exact=False
             ).first.click()
-            admin.locator("select[name^=action_]").select_option("accept")
+            decisions = admin.locator("select[name^=action_]")
+            count = decisions.count()
+            self.assertGreater(count, 1)
+            decisions.first.select_option("reject")
+            admin.get_by_role("button", name="Accept all proposals", exact=True).click()
+            self.assertEqual(decisions.evaluate_all("nodes => nodes.map(n => n.value)"), ["accept"] * count)
+            self.assertTrue(admin.get_by_role("button", name="Apply review decisions").is_visible())
+            self.assertFalse(admin.get_by_text("Codebook review completed.", exact=False).is_visible())
+            # Individual decisions remain editable after batch selection.
+            decisions.first.select_option("reject")
+            self.assertEqual(decisions.first.input_value(), "reject")
+            admin.get_by_role("button", name="Accept all proposals", exact=True).click()
             admin.get_by_role("button", name="Apply review decisions").click()
             admin.get_by_text("Codebook review completed.", exact=False).wait_for()
             self.assertGreater(admin.locator(".fulltext mark").count(), 0)
