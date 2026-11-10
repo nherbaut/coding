@@ -38,6 +38,62 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             )
             for index in range(70)
         )
+        names = [
+            "Zulu category",
+            "Alpha category",
+            "Zeta code",
+            "Alpha parent",
+            "Child code",
+            "beta code",
+            "apple code",
+        ]
+        term_ids = {name: str(uuid.uuid4()) for name in names}
+        book.content["codes"].extend(
+            [
+                dict(
+                    id=term_ids["Child code"],
+                    kind="code",
+                    name="Child code",
+                    parent=term_ids["Alpha parent"],
+                ),
+                dict(
+                    id=term_ids["Zulu category"],
+                    kind="category",
+                    name="Zulu category",
+                    parent=None,
+                ),
+                dict(
+                    id=term_ids["Zeta code"],
+                    kind="code",
+                    name="Zeta code",
+                    parent=term_ids["Zulu category"],
+                ),
+                dict(
+                    id=term_ids["beta code"],
+                    kind="code",
+                    name="beta code",
+                    parent=term_ids["Alpha category"],
+                ),
+                dict(
+                    id=term_ids["Alpha category"],
+                    kind="category",
+                    name="Alpha category",
+                    parent=None,
+                ),
+                dict(
+                    id=term_ids["Alpha parent"],
+                    kind="code",
+                    name="Alpha parent",
+                    parent=term_ids["Zulu category"],
+                ),
+                dict(
+                    id=term_ids["apple code"],
+                    kind="code",
+                    name="apple code",
+                    parent=term_ids["Alpha category"],
+                ),
+            ]
+        )
         # Shared revisions are immutable, so publish a new setup revision.
         SharedCodebook.objects.create(content=book.content)
         case = Case.objects.create(key="browser", name="Example OSS project")
@@ -91,6 +147,51 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
                 node.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
             }"""
             )
+            coder.get_by_role("button", name="Add code", exact=True).click()
+            options = coder.locator("#code-parent option").evaluate_all(
+                "nodes => nodes.map(node => ({id:node.value,label:node.textContent,path:node.title}))"
+            )
+            expected = [
+                "Alpha category",
+                "apple code",
+                "beta code",
+                "Zulu category",
+                "Alpha parent",
+                "Child code",
+                "Zeta code",
+            ]
+            actual = [
+                option["id"] for option in options if option["id"] in term_ids.values()
+            ]
+            self.assertEqual(actual, [term_ids[name] for name in expected])
+            child_option = next(
+                option for option in options if option["id"] == term_ids["Child code"]
+            )
+            self.assertTrue(child_option["label"].startswith("\u00a0" * 4))
+            self.assertEqual(
+                child_option["path"], "Zulu category › Alpha parent › Child code"
+            )
+            self.assertIn(
+                "(Category)",
+                next(
+                    option["label"]
+                    for option in options
+                    if option["id"] == term_ids["Zulu category"]
+                ),
+            )
+            labels = coder.locator("#code-tree .code-row label").all_text_contents()
+            self.assertEqual([name for name in labels if name in term_ids], expected)
+            coder.locator("#close-code").click()
+            coder.get_by_role("button", name="Edit Alpha parent", exact=True).click()
+            candidates = coder.locator("#code-parent option").evaluate_all(
+                "nodes => nodes.map(node => node.value)"
+            )
+            self.assertNotIn(term_ids["Alpha parent"], candidates)
+            self.assertNotIn(term_ids["Child code"], candidates)
+            self.assertEqual(
+                coder.locator("#code-parent").input_value(), term_ids["Zulu category"]
+            )
+            coder.locator("#close-code").click()
             coder.get_by_role("button", name="Add code", exact=True).click()
             coder.get_by_label("Name", exact=True).fill("Disclosure requirement")
             coder.get_by_label("Highlight color").evaluate(

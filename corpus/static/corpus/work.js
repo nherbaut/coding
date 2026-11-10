@@ -218,52 +218,69 @@ function renderText() {
     } else root.append(document.createTextNode(text.slice(start, end)));
   }
 }
+const termOrder = new Intl.Collator("en", {
+  sensitivity: "base",
+  numeric: true,
+});
+function hierarchyEntries(codes, excludedId = null) {
+  const entries = [];
+  function visit(parent, depth, ancestors) {
+    const children = codes
+      .filter((code) => (code.parent || null) === parent)
+      .sort(
+        (a, b) => termOrder.compare(a.name, b.name) || a.id.localeCompare(b.id),
+      );
+    for (const code of children) {
+      if (code.id === excludedId) continue;
+      const path = [...ancestors, code.name];
+      entries.push({ code, depth, path: path.join(" › ") });
+      visit(code.id, depth + 1, path);
+    }
+  }
+  visit(null, 0, []);
+  return entries;
+}
 function renderCodes() {
   const root = $("#code-tree");
   const chosen = chosenCodes;
   root.replaceChildren();
   const search = $("#code-search").value.toLowerCase();
-  const codes = state.codebook.codes;
-  function append(parent, depth) {
-    for (const code of codes.filter((c) => (c.parent || null) === parent)) {
-      if (
-        (!code.archived || (editing && chosen.has(code.id))) &&
-        (!search || code.name.toLowerCase().includes(search))
-      ) {
-        const row = element("div", undefined, "code-row");
-        row.style.paddingLeft = Math.min(depth, 6) * 12 + "px";
-        const label = element("label");
-        if (code.kind === "code") {
-          const input = element("input");
-          input.type = "checkbox";
-          input.value = code.id;
-          input.checked = chosen.has(code.id);
-          input.disabled = !!assignment?.locked || !!code.archived;
-          input.onchange = () => {
-            if (input.checked) chosenCodes.add(code.id);
-            else chosenCodes.delete(code.id);
-            renderText();
-            renderDraftStatus();
-          };
-          label.append(input);
-          const swatch = element("span", undefined, "code-swatch");
-          swatch.style.backgroundColor = state.colors[code.id];
-          swatch.setAttribute("aria-hidden", "true");
-          label.append(swatch);
-        }
-        label.append(document.createTextNode(code.name));
-        label.title = code.memo;
-        row.append(label);
-        const edit = element("button", "⋯", "secondary");
-        edit.setAttribute("aria-label", "Edit " + code.name);
-        edit.onclick = () => openCode(code);
-        row.append(edit);
-        root.append(row);
+  for (const { code, depth } of hierarchyEntries(state.codebook.codes)) {
+    if (
+      (!code.archived || (editing && chosen.has(code.id))) &&
+      (!search || code.name.toLowerCase().includes(search))
+    ) {
+      const row = element("div", undefined, "code-row");
+      row.style.paddingLeft = Math.min(depth, 6) * 12 + "px";
+      const label = element("label");
+      if (code.kind === "code") {
+        const input = element("input");
+        input.type = "checkbox";
+        input.value = code.id;
+        input.checked = chosen.has(code.id);
+        input.disabled = !!assignment?.locked || !!code.archived;
+        input.onchange = () => {
+          if (input.checked) chosenCodes.add(code.id);
+          else chosenCodes.delete(code.id);
+          renderText();
+          renderDraftStatus();
+        };
+        label.append(input);
+        const swatch = element("span", undefined, "code-swatch");
+        swatch.style.backgroundColor = state.colors[code.id];
+        swatch.setAttribute("aria-hidden", "true");
+        label.append(swatch);
       }
-      append(code.id, depth + 1);
+      label.append(document.createTextNode(code.name));
+      label.title = code.memo;
+      row.append(label);
+      const edit = element("button", "⋯", "secondary");
+      edit.setAttribute("aria-label", "Edit " + code.name);
+      edit.onclick = () => openCode(code);
+      row.append(edit);
+      root.append(row);
     }
   }
-  append(null, 0);
 }
 function renderAnnotations() {
   const root = $("#annotations");
@@ -463,10 +480,18 @@ function openCode(code) {
   const option = element("option", "No parent");
   option.value = "";
   parent.append(option);
-  for (const c of state.codebook.codes.filter((c) => c.id !== editingCode)) {
-    const o = element("option", c.name);
-    o.value = c.id;
-    parent.append(o);
+  for (const { code: term, depth, path } of hierarchyEntries(
+    state.codebook.codes,
+    editingCode,
+  )) {
+    const kind = term.kind === "category" ? "Category" : "Code";
+    const option = element(
+      "option",
+      `${"\u00a0\u00a0".repeat(depth)}${term.name} (${kind})`,
+    );
+    option.value = term.id;
+    option.title = path;
+    parent.append(option);
   }
   parent.value = code?.parent || "";
   $("#code-dialog").showModal();
