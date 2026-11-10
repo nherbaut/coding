@@ -28,6 +28,13 @@ class ProxyAuthenticationTests(TestCase):
         self.assertFalse(user.is_superuser)
         self.assertFalse(user.has_usable_password())
 
+    def test_admin_entry_opens_corpus_dashboard(self):
+        response = self.client.get("/admin/", **self.headers())
+        self.assertRedirects(response, "/", fetch_redirect_response=False)
+        dashboard = self.client.get(response.url, **self.headers())
+        self.assertContains(dashboard, "Create a coder session")
+        self.assertNotContains(dashboard, "Admin account")
+
     def test_nonmembers_and_missing_headers_are_denied(self):
         self.assertEqual(self.client.get("/").status_code, 403)
         self.assertEqual(
