@@ -10,7 +10,9 @@ from django.core.mail import EmailMessage
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-from .models import SubmissionEmail
+from .models import SubmissionEmail, InvitationEmail
+from .invitations import invitation_cipher
+from cryptography.fernet import InvalidToken
 
 logger = logging.getLogger(__name__)
 
@@ -39,56 +41,81 @@ def queue_submission_email(submission):
     )
 
 
+def claim_next_email():
+    now = timezone.now()
+    for model in (SubmissionEmail, InvitationEmail):
+        with transaction.atomic():
+            query = (
+                model.objects.select_for_update()
+                .filter(sent_at__isnull=True, next_attempt_at__lte=now)
+                .filter(Q(locked_until__isnull=True) | Q(locked_until__lte=now))
+            )
+            if model is InvitationEmail:
+                query = query.filter(cancelled_at__isnull=True)
+            job = query.order_by("pk").first()
+            if job is None:
+                continue
+            job.lease_token = uuid.uuid4()
+            job.locked_until = now + datetime.timedelta(minutes=2)
+            job.attempts += 1
+            job.save(update_fields=["lease_token", "locked_until", "attempts"])
+            return job
+    return None
+
+
 def deliver_next_email():
     if not settings.CASE_EMAIL_ENABLED:
         return False
-    now = timezone.now()
-    with transaction.atomic():
-        job = (
-            SubmissionEmail.objects.select_for_update()
-            .filter(sent_at__isnull=True, next_attempt_at__lte=now)
-            .filter(Q(locked_until__isnull=True) | Q(locked_until__lte=now))
-            .order_by("pk")
-            .first()
-        )
-        if job is None:
-            return False
-        token = uuid.uuid4()
-        job.lease_token = token
-        job.locked_until = now + datetime.timedelta(minutes=2)
-        job.attempts += 1
-        job.save(update_fields=["lease_token", "locked_until", "attempts"])
+    job = claim_next_email()
+    if job is None:
+        return False
+    model = type(job)
+    updates = model.objects.filter(pk=job.pk, lease_token=job.lease_token)
     try:
+        body = job.body
+        if isinstance(job, InvitationEmail):
+            if job.token_hash != job.session.token_hash:
+                updates.update(
+                    cancelled_at=timezone.now(),
+                    body="",
+                    lease_token=None,
+                    locked_until=None,
+                )
+                return True
+            body = invitation_cipher().decrypt(job.body.encode()).decode()
         message = EmailMessage(
             job.subject,
-            job.body,
+            body,
             job.sender,
             job.recipients,
             headers={"Message-ID": job.message_id},
         )
         if message.send(fail_silently=False) != 1:
             raise smtplib.SMTPException("SMTP backend did not accept the message")
-    except (OSError, smtplib.SMTPException, ValueError) as error:
-        # Provider responses can include credentials or addresses. Persist only type/code.
+    except (OSError, smtplib.SMTPException, ValueError, InvalidToken) as error:
         summary = type(error).__name__
         if isinstance(error, smtplib.SMTPResponseException):
             summary += f" ({error.smtp_code})"
         delay = min(3600, 30 * 2 ** min(job.attempts - 1, 10))
-        SubmissionEmail.objects.filter(pk=job.pk, lease_token=token).update(
+        updates.update(
             lease_token=None,
             locked_until=None,
             last_error=summary,
             next_attempt_at=timezone.now() + datetime.timedelta(seconds=delay),
         )
         logger.warning(
-            "Submission email %s will retry after %s seconds (%s)",
+            "%s %s will retry after %s seconds (%s)",
+            model.__name__,
             job.pk,
             delay,
             summary,
         )
     else:
-        SubmissionEmail.objects.filter(pk=job.pk, lease_token=token).update(
+        values = dict(
             sent_at=timezone.now(), lease_token=None, locked_until=None, last_error=""
         )
-        logger.info("Submission email %s accepted by SMTP server", job.pk)
+        if isinstance(job, InvitationEmail):
+            values["body"] = ""
+        updates.update(**values)
+        logger.info("%s %s accepted by SMTP server", model.__name__, job.pk)
     return True

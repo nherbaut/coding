@@ -17,7 +17,9 @@
           value="create"
         /><label
           >Coder name<input name="coder" required maxlength="200" /></label
-        ><label
+        ><label>Coder email (optional)<input type="email" name="email" maxlength="254" autocomplete="email" /></label>
+        <small>Entering an email sends the private link and assigned case list.</small>
+        <label
           >Assigned cases<select name="cases" multiple size="7">
             {% for case in cases %}
             <option value="{{ case.pk }}">{{ case.name }}</option>
@@ -118,6 +120,13 @@
   <article class="session">
     <h3>{{ session.coder }}</h3>
     <p>{{ session.pk }}</p>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="action" value="send_invitation"><input type="hidden" name="session" value="{{ session.pk }}">
+      <label>Coder email<input name="email" type="email" maxlength="254" value="{{ session.email }}" required></label>
+      <button>Generate and email new link</button>
+      <p><small>Replaces the previous private link. Includes the cases awaiting coding.</small></p>
+      {% if session.invitation_history %}<p>Invitation email · {{ session.invitation_history.0.status }}</p>{% endif %}
+    </form>
     <form method="post">
       {% csrf_token %}<input
         type="hidden"

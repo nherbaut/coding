@@ -5,9 +5,11 @@ import secrets
 import uuid
 import yaml
 from django.db import transaction
+from django.utils import timezone
 from .colors import HEX_COLOR
 from .models import (
     Assignment,
+    InvitationEmail,
     CodingSession,
     SharedCodebook,
     Submission,
@@ -80,22 +82,30 @@ def load_book(text):
     return validate_book(yaml.safe_load(text))
 
 
+def cancel_invitation_emails(session):
+    InvitationEmail.objects.filter(
+        session=session, sent_at__isnull=True, cancelled_at__isnull=True
+    ).update(cancelled_at=timezone.now(), body="", lease_token=None, locked_until=None)
+
+
 def issue_link(session):
     token = secrets.token_urlsafe(32)
     session.token_hash = hashlib.sha256(token.encode()).hexdigest()
     session.save(update_fields=["token_hash"])
+    cancel_invitation_emails(session)
     return "/access/#" + token
 
 
 @transaction.atomic
-def create_session(coder, cases):
+def create_session(coder, cases, email=""):
     book = SharedCodebook.objects.select_for_update().order_by("-pk").first()
     if not book:
         raise ValueError("Import a shared codebook first")
     if not isinstance(coder, str) or not coder.strip():
         raise ValueError("Provide a coder name")
+    email = CodingSession._meta.get_field("email").clean(email.strip(), None)
     session = CodingSession.objects.create(
-        coder=coder.strip(), base=book, codebook=deepcopy(book.content)
+        coder=coder.strip(), email=email, base=book, codebook=deepcopy(book.content)
     )
     for case in cases:
         assign_case(session, case)

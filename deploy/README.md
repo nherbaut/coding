@@ -50,3 +50,5 @@ Integration references are the [Authelia Traefik documentation](https://www.auth
 ## Submission notifications
 
 Both `coding` and `coding-mailer` use `/home/nherbaut/server/coding.env`. Set `CASE_EMAIL_ENABLED=1` with the SMTP settings and `CASE_SUBMISSION_EMAIL_TO`. The worker starts after the web service is healthy and retries queued notifications after mail-server failures. After changing SMTP settings, recreate both services so they receive the updated environment. Check `docker compose logs coding-mailer` for delivery problems. Logs identify error types and SMTP status codes without recording passwords or provider response text.
+
+Coder invitations are delivered by `coding-mailer` using the same protected SMTP environment. The administrator enters the recipient in the session form. Pending private-link messages are encrypted at rest with the application's stable `DJANGO_SECRET_KEY`. Both the web and mailer services must run the updated image after invitation-related migrations.

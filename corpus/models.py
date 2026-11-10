@@ -54,6 +54,7 @@ class SharedCodebook(models.Model):
 class CodingSession(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     coder = models.CharField(max_length=200)
+    email = models.EmailField(blank=True, default="")
     base = models.ForeignKey(SharedCodebook, on_delete=models.PROTECT)
     codebook = models.JSONField()
     revision = models.PositiveIntegerField(default=0)
@@ -114,10 +115,7 @@ class MergeAudit(models.Model):
     created = models.DateTimeField(auto_now_add=True)
 
 
-class SubmissionEmail(models.Model):
-    submission = models.OneToOneField(
-        Submission, on_delete=models.PROTECT, related_name="email_notification"
-    )
+class EmailDelivery(models.Model):
     subject = models.CharField(max_length=250)
     body = models.TextField()
     sender = models.CharField(max_length=254)
@@ -131,8 +129,33 @@ class SubmissionEmail(models.Model):
     locked_until = models.DateTimeField(null=True, blank=True)
     last_error = models.CharField(max_length=100, blank=True)
 
+    class Meta:
+        abstract = True
+
     @property
     def status(self):
         if self.sent_at:
             return "Sent"
         return "Retrying" if self.attempts else "Queued"
+
+
+class SubmissionEmail(EmailDelivery):
+    submission = models.OneToOneField(
+        Submission, on_delete=models.PROTECT, related_name="email_notification"
+    )
+
+
+class InvitationEmail(EmailDelivery):
+    session = models.ForeignKey(
+        CodingSession, on_delete=models.PROTECT, related_name="invitation_emails"
+    )
+    token_hash = models.CharField(max_length=64)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def status(self):
+        if self.cancelled_at:
+            return "Cancelled"
+        if self.token_hash != self.session.token_hash:
+            return "Replaced"
+        return super().status

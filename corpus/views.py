@@ -10,6 +10,8 @@ from django.core.exceptions import ValidationError
 from functools import wraps
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db import transaction
+from django.db.models import Prefetch
+from django.core.validators import validate_email
 from django.http import JsonResponse, HttpResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -21,6 +23,7 @@ from .models import (
     SharedCodebook,
     Submission,
     MergeAudit,
+    InvitationEmail,
 )
 from .services import (
     Conflict,
@@ -29,6 +32,7 @@ from .services import (
     create_session,
     differences,
     issue_link,
+    cancel_invitation_emails,
     load_book,
     merge_submission,
     serialize_annotations,
@@ -37,6 +41,7 @@ from .services import (
     validate_book,
 )
 from .importers import import_zip
+from .invitations import queue_invitation_email
 from .colors import code_color, colored_book, highlight_style, highlighted_segments
 
 
@@ -287,11 +292,41 @@ def dashboard(request):
     if request.method == "POST":
         action = request.POST["action"]
         if action == "create":
-            session, link = create_session(
-                request.POST["coder"],
-                Case.objects.filter(pk__in=request.POST.getlist("cases")),
+            with transaction.atomic():
+                session, link = create_session(
+                    request.POST["coder"],
+                    Case.objects.filter(pk__in=request.POST.getlist("cases")),
+                    email=request.POST.get("email", ""),
+                )
+                if session.email:
+                    queue_invitation_email(session, link)
+                    notice = (
+                        "Invitation queued for "
+                        + session.email
+                        + ". Private link: "
+                        + request.build_absolute_uri(link)
+                    )
+                else:
+                    notice = request.build_absolute_uri(link)
+        elif action == "send_invitation":
+            email = CodingSession._meta.get_field("email").clean(
+                request.POST.get("email", "").strip(), None
             )
-            notice = request.build_absolute_uri(link)
+            validate_email(email)
+            from django.conf import settings
+
+            if not settings.CASE_EMAIL_ENABLED:
+                raise ValueError("Transactional email is not enabled")
+            with transaction.atomic():
+                session = get_object_or_404(
+                    CodingSession.objects.select_for_update(),
+                    pk=request.POST["session"],
+                )
+                session.email = email
+                session.save(update_fields=["email"])
+                link = issue_link(session)
+                queue_invitation_email(session, link)
+                notice = "New private link and case list queued for " + email
         elif action == "assign":
             session = get_object_or_404(CodingSession, pk=request.POST["session"])
             for case in Case.objects.filter(pk__in=request.POST.getlist("cases")):
@@ -307,6 +342,7 @@ def dashboard(request):
                 else:
                     session.token_hash = ""
                     session.save()
+                    cancel_invitation_emails(session)
                     notice = "Private link revoked"
         elif action == "reopen":
             with transaction.atomic():
@@ -339,7 +375,13 @@ def dashboard(request):
         dict(
             notice=notice,
             cases=Case.objects.all(),
-            sessions=CodingSession.objects.all(),
+            sessions=CodingSession.objects.prefetch_related(
+                Prefetch(
+                    "invitation_emails",
+                    queryset=InvitationEmail.objects.order_by("-pk").defer("body"),
+                    to_attr="invitation_history",
+                )
+            ),
             assignments=Assignment.objects.select_related("session", "case"),
             submissions=Submission.objects.select_related(
                 "assignment__session", "assignment__case", "email_notification"

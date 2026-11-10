@@ -117,3 +117,11 @@ Set `CASE_EMAIL_ENABLED=1`, `PUBLIC_BASE_URL`, `CASE_SUBMISSION_EMAIL_TO` (comma
 Submitting a case stores an email in the same database transaction as its immutable submission. The separate mailer service sends the notification with coder, case, submission time, counts and an authenticated review link. Delivery errors retain the queued notification and retry with increasing delays up to one hour. The dashboard shows Queued, Retrying or Sent. Sent means that SMTP accepted the message. Code excerpts and private coder links are excluded from the email.
 
 The Compose stack includes the mailer worker. For a manual delivery pass, run `python manage.py deliver_notifications`; use `--watch` for continuous delivery. Disabling `CASE_EMAIL_ENABLED` pauses delivery and creation of new notifications. Existing pending messages remain stored. Notifications are created for new submissions after email is enabled, including resubmissions after an admin reopens a case. They are not generated retrospectively for existing submissions. A stable Message-ID is retained across retries, though an interrupted SMTP acknowledgement can still produce a duplicate delivery.
+
+## Email coder invitations
+
+Enter the optional coder email when creating a session to queue an invitation containing its private link and alphabetically ordered list of cases awaiting coding. Sessions created without an email retain the manual-link workflow.
+
+For an existing session, enter or update its email and click **Generate and email new link**. This replaces the previous private URL and invalidates existing browser sessions using that URL. Coding, codebook edits and assignments stay attached to the same session. The invitation includes its currently unfinished cases. Adding cases later can be followed by sending another invitation.
+
+Invitations use the same SMTP settings and retry worker as case-submission notifications. Pending invitation bodies are encrypted using a key derived from `DJANGO_SECRET_KEY`, and cleared after SMTP accepts them. Revoking or replacing a link cancels its pending invitations. The session card shows the latest invitation delivery status. Keep `DJANGO_SECRET_KEY` stable while invitations are pending. If that key changes, generate a new invitation for pending messages.

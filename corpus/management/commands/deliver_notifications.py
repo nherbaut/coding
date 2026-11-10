@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = "Deliver queued submission emails, retrying temporary SMTP failures"
+    help = "Deliver queued transactional emails, retrying temporary SMTP failures"
 
     def add_arguments(self, parser):
         parser.add_argument("--watch", action="store_true")
