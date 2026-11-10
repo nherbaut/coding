@@ -51,6 +51,12 @@ async function reload() {
 }
 async function openDocument(nextAssignment, nextDocument) {
   if (busy) return;
+  if (
+    !editing &&
+    hasUnsavedAnnotation() &&
+    !confirm("Discard this unsaved annotation?")
+  )
+    return;
   clearTimeout(autosaveTimer);
   if (editing && selected) {
     const saved = await saveAnnotation(
@@ -114,6 +120,7 @@ function render() {
   renderText();
   renderCodes();
   renderAnnotations();
+  renderDraftStatus();
 }
 function applyCodeColors(node, ids) {
   const colors = [
@@ -135,14 +142,50 @@ function applyCodeColors(node, ids) {
   node.style.background = `linear-gradient(to bottom, ${stops.join(",")})`;
   node.style.color = "#24332e";
 }
+function hasUnsavedAnnotation() {
+  if (!selected) return false;
+  if (!editing) return true;
+  const saved = assignment.annotations.find((item) => item.id === editing);
+  return (
+    !saved ||
+    saved.memo !== $("#memo").value ||
+    JSON.stringify([...saved.codes].sort()) !==
+      JSON.stringify([...chosenCodes].sort())
+  );
+}
+function renderDraftStatus() {
+  const count =
+    assignment?.annotations.filter(
+      (item) => item.document === documentVersion?.id,
+    ).length || 0;
+  $("#annotation-count").textContent =
+    `${count} saved annotation${count === 1 ? "" : "s"}`;
+  const pending = hasUnsavedAnnotation();
+  $("#annotation-guidance").textContent = assignment?.locked
+    ? "Submitted case. Ask the admin to reopen it for changes."
+    : pending
+      ? chosenCodes.size
+        ? "Unsaved annotation. Click Save annotation to keep this highlight."
+        : "Choose a code, then click Save annotation."
+      : "Select a passage, choose a code, then save.";
+  $("#save-annotation").disabled =
+    !selected || !chosenCodes.size || !!assignment?.locked || busy;
+  $("#cancel-edit").hidden = !selected;
+  $("#cancel-edit").textContent = editing ? "Cancel edit" : "Clear selection";
+}
 function renderText() {
   const root = $("#document");
   root.replaceChildren();
   if (!documentVersion) return;
   const text = documentVersion.text;
-  const annotations = assignment.annotations.filter(
+  let annotations = assignment.annotations.filter(
     (a) => a.document === documentVersion.id,
   );
+  if (selected?.document === documentVersion.id && hasUnsavedAnnotation()) {
+    annotations = annotations.filter((item) => item.id !== editing);
+    if (chosenCodes.size)
+      annotations.push({ ...selected, codes: [...chosenCodes], preview: true });
+  }
   const points = [
     ...new Set([
       0,
@@ -160,6 +203,8 @@ function renderText() {
         mark,
         active.flatMap((a) => a.codes),
       );
+      if (active.some((item) => item.preview))
+        mark.classList.add("annotation-preview");
       mark.title = active
         .flatMap((a) =>
           a.codes.map(
@@ -195,6 +240,8 @@ function renderCodes() {
           input.onchange = () => {
             if (input.checked) chosenCodes.add(code.id);
             else chosenCodes.delete(code.id);
+            renderText();
+            renderDraftStatus();
           };
           label.append(input);
           const swatch = element("span", undefined, "code-swatch");
@@ -284,7 +331,9 @@ function captureSelection() {
   chosenCodes = new Set([...chosenCodes].filter((id) => active.has(id)));
   renderCodes();
   $("#selection").textContent = selected.selected_text;
-  $("#cancel-edit").hidden = true;
+  selection.removeAllRanges();
+  renderText();
+  renderDraftStatus();
 }
 $("#document").addEventListener("mouseup", captureSelection);
 $("#document").addEventListener("keyup", captureSelection);
@@ -339,6 +388,13 @@ $("#cancel-edit").onclick = () => {
 };
 $("#code-search").oninput = renderCodes;
 $("#submit-case").onclick = async () => {
+  if (hasUnsavedAnnotation()) {
+    status(
+      "Save or clear the current annotation before submitting the case.",
+      true,
+    );
+    return;
+  }
   if (busy || !confirm("Submit and lock this case for admin review?")) return;
   busy = true;
   try {
@@ -489,5 +545,9 @@ function scheduleAutosave() {
     }
   }, 900);
 }
-$("#memo").addEventListener("input", scheduleAutosave);
+$("#memo").addEventListener("input", () => {
+  renderText();
+  renderDraftStatus();
+  scheduleAutosave();
+});
 $("#code-tree").addEventListener("change", scheduleAutosave);

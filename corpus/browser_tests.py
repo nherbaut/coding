@@ -27,6 +27,19 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
                 ],
             )
         )
+        # Exercise a long taxonomy that previously pushed Save below the viewport.
+        book = SharedCodebook.objects.get()
+        book.content["codes"].extend(
+            dict(
+                id=str(uuid.uuid4()),
+                kind="code",
+                name=f"Taxonomy leaf {index}",
+                parent=None,
+            )
+            for index in range(70)
+        )
+        # Shared revisions are immutable, so publish a new setup revision.
+        SharedCodebook.objects.create(content=book.content)
         case = Case.objects.create(key="browser", name="Example OSS project")
         put_document(
             "browser-document",
@@ -86,6 +99,17 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             coder.locator("#code-tree").get_by_label(
                 "Disclosure requirement", exact=True
             ).check()
+            coder.locator("#document mark.annotation-preview").wait_for()
+            preview_state = coder.evaluate("fetch('/api/state/').then(r => r.json())")
+            self.assertEqual(preview_state["assignments"][0]["annotations"], [])
+            self.assertIn(
+                "Unsaved annotation", coder.locator("#annotation-guidance").inner_text()
+            )
+            save_rect = coder.locator("#save-annotation").bounding_box()
+            self.assertLessEqual(
+                save_rect["y"] + save_rect["height"],
+                coder.evaluate("window.innerHeight"),
+            )
             # Filtering the tree must preserve selected codes hidden by the search.
             coder.get_by_label("Find a code").fill("Human")
             coder.get_by_label("Annotation memo").fill("Coding evidence")
@@ -93,6 +117,12 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             coder.locator("#annotations").get_by_text(
                 "Coding evidence", exact=True
             ).wait_for()
+            self.assertEqual(
+                coder.locator("#document mark.annotation-preview").count(), 0
+            )
+            self.assertEqual(
+                coder.locator("#annotation-count").inner_text(), "1 saved annotation"
+            )
             mark = coder.locator("#document mark").first
             self.assertTrue(
                 mark.evaluate(

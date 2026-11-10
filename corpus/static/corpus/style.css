@@ -360,3 +360,57 @@ dialog::backdrop {
 .fulltext mark {
   color: inherit;
 }
+
+.codes {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.codes > :not(#code-tree) {
+  flex-shrink: 0;
+}
+.codes h2 {
+  margin-bottom: 4px;
+}
+.annotation-count {
+  color: #617468;
+  font-size: 12px;
+  margin: 0 0 8px;
+}
+.codes #selection {
+  max-height: 100px;
+}
+#code-tree {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-bottom: 10px;
+}
+.annotation-controls {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+#annotation-guidance {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+  color: #53635a;
+}
+.annotation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.annotation-controls label {
+  margin: 8px 0;
+}
+.annotation-preview {
+  outline: 1px dashed #53635a;
+  outline-offset: 1px;
+}
+@media (max-width: 720px) {
+  #code-tree {
+    flex: none;
+    max-height: 320px;
+  }
+}

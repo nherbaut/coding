@@ -25,15 +25,21 @@
   </section>
   <aside class="codes">
     <h2>Code passage</h2>
+    <p id="annotation-count" class="annotation-count"></p>
     <blockquote id="selection">Select a passage in the document.</blockquote>
     <label
       >Find a code<input id="code-search" placeholder="Search codebook"
     /></label>
     <div id="code-tree"></div>
-    <label>Annotation memo<textarea id="memo" rows="4"></textarea></label
-    ><button id="save-annotation">Save annotation</button
-    ><button id="cancel-edit" class="secondary" hidden>Cancel edit</button
-    ><button id="new-code" class="secondary">Add code</button>
+    <div class="annotation-controls">
+      <p id="annotation-guidance" role="status">Select a passage, choose a code, then save.</p>
+      <label>Annotation memo<textarea id="memo" rows="2"></textarea></label>
+      <div class="annotation-actions">
+        <button id="save-annotation" disabled>Save annotation</button>
+        <button id="cancel-edit" class="secondary" hidden>Clear selection</button>
+        <button id="new-code" class="secondary">Add code</button>
+      </div>
+    </div>
   </aside>
 </main>
 <dialog id="book-dialog">
