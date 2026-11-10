@@ -414,3 +414,48 @@ dialog::backdrop {
     max-height: 320px;
   }
 }
+
+.codes {
+  padding: 14px 16px;
+}
+.code-panel-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.code-panel-heading h2 {
+  margin: 0;
+}
+.code-panel-heading .annotation-count {
+  margin: 0;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.codes > label {
+  margin: 6px 0;
+}
+.codes #selection {
+  max-height: 64px;
+  margin: 6px 0;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.annotation-controls {
+  padding-top: 6px;
+}
+.annotation-controls label {
+  margin: 4px 0 6px;
+  font-size: 12px;
+}
+.annotation-controls textarea {
+  height: 36px;
+  min-height: 36px;
+  margin-top: 4px;
+  padding: 6px 8px;
+}
+.annotation-actions button {
+  padding: 7px 10px;
+  font-size: 12px;
+}

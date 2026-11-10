@@ -75,6 +75,12 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             coder.on("pageerror", lambda error: errors.append(str(error)))
             coder.goto(link)
             coder.wait_for_selector('#document:has-text("Contributors")')
+            self.assertFalse(coder.locator("#selection").is_visible())
+            self.assertFalse(coder.locator("#annotation-guidance").is_visible())
+            self.assertGreater(
+                coder.locator("#code-tree").bounding_box()["height"], 400
+            )
+
             coder.locator("#document").evaluate(
                 """node => {
                 const range = document.createRange();

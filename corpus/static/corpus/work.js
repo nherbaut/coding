@@ -114,8 +114,7 @@ function render() {
   $("#submit-case").disabled = !assignment || assignment.locked || busy;
   $("#save-annotation").disabled = !assignment || assignment.locked || busy;
   $("#memo").disabled = !!assignment?.locked;
-  $("#selection").textContent =
-    selected?.selected_text || "Select a passage in the document.";
+  $("#selection").textContent = selected?.selected_text || "";
   $("#cancel-edit").hidden = !editing;
   renderText();
   renderCodes();
@@ -167,7 +166,10 @@ function renderDraftStatus() {
       ? chosenCodes.size
         ? "Unsaved annotation. Click Save annotation to keep this highlight."
         : "Choose a code, then click Save annotation."
-      : "Select a passage, choose a code, then save.";
+      : "";
+  $("#selection").hidden = !selected;
+  $("#selection").textContent = selected?.selected_text || "";
+  $("#annotation-guidance").hidden = !$("#annotation-guidance").textContent;
   $("#save-annotation").disabled =
     !selected || !chosenCodes.size || !!assignment?.locked || busy;
   $("#cancel-edit").hidden = !selected;
