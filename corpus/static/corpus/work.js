@@ -273,6 +273,25 @@ function hierarchyEntries(codes, excludedId = null) {
   visit(null, 0, []);
   return entries;
 }
+function bounceSaveButton() {
+  const button = $("#save-annotation");
+  for (const animation of button.getAnimations()) animation.cancel();
+  if (
+    button.disabled ||
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  )
+    return;
+  button.animate(
+    [
+      { transform: "translateY(0)" },
+      { transform: "translateY(-6px)" },
+      { transform: "translateY(0)" },
+      { transform: "translateY(-2px)" },
+      { transform: "translateY(0)" },
+    ],
+    { duration: 380, easing: "ease-out" },
+  );
+}
 function renderCodes() {
   const root = $("#code-tree");
   const chosen = chosenCodes;
@@ -297,6 +316,7 @@ function renderCodes() {
           else chosenCodes.delete(code.id);
           renderText();
           renderDraftStatus();
+          if (input.checked) bounceSaveButton();
         };
         label.append(input);
         const swatch = element("span", undefined, "code-swatch");
