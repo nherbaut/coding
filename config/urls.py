@@ -3,6 +3,7 @@ from django.urls import path
 from corpus import views
 
 urlpatterns = [
+    path("healthz/", views.health),
     path("admin/", admin.site.urls),
     path("", views.dashboard, name="dashboard"),
     path("access/", views.access),

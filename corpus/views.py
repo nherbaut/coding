@@ -465,3 +465,11 @@ def results_export(request, submission_id):
             results=rows,
         )
     )
+
+
+def health(request):
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT 1")
+    return JsonResponse({"status": "ok"})

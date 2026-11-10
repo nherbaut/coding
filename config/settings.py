@@ -27,6 +27,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "corpus.proxy_auth.AutheliaAdminMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -77,3 +78,19 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 SECURE_REFERRER_POLICY = "same-origin"
 DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024
+
+# Administrator identity is checked for every request when deployed behind Authelia.
+AUTHELIA_AUTH_ENABLED = os.environ.get("AUTHELIA_AUTH_ENABLED", "0") == "1"
+AUTHELIA_ADMIN_GROUP = os.environ.get("AUTHELIA_ADMIN_GROUP", "coding-admins")
+AUTHELIA_PROXY_SECRET = os.environ.get("AUTHELIA_PROXY_SECRET", "")
+AUTHELIA_TRUSTED_PROXIES = [
+    value.strip()
+    for value in os.environ.get("AUTHELIA_TRUSTED_PROXIES", "").split(",")
+    if value.strip()
+]
+if AUTHELIA_AUTH_ENABLED:
+    if len(AUTHELIA_PROXY_SECRET) < 32 or not AUTHELIA_TRUSTED_PROXIES:
+        raise RuntimeError(
+            "Authelia requires a strong proxy secret and trusted proxy addresses"
+        )
+    AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.RemoteUserBackend"]

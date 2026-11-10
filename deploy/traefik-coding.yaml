@@ -1,0 +1,55 @@
+http:
+  routers:
+    coding-admin:
+      rule: "Host(`coding.home.nextnet.top`) && (Path(`/`) || PathPrefix(`/admin`) || PathPrefix(`/review`) || PathPrefix(`/exports`))"
+      priority: 100
+      entryPoints: [websecure]
+      tls:
+        certResolver: myresolver
+      middlewares:
+        - coding-strip-identity
+        - coding-authelia
+        - coding-proxy-identity
+      service: coding
+    coding-coder:
+      rule: "Host(`coding.home.nextnet.top`)"
+      priority: 10
+      entryPoints: [websecure]
+      tls:
+        certResolver: myresolver
+      middlewares: [coding-strip-identity]
+      service: coding
+    coding-http:
+      rule: "Host(`coding.home.nextnet.top`)"
+      entryPoints: [port80]
+      middlewares: [coding-https]
+      service: coding
+  middlewares:
+    coding-strip-identity:
+      headers:
+        customRequestHeaders:
+          Remote-User: ""
+          Remote-Groups: ""
+          Remote-Email: ""
+          Remote-Name: ""
+          X-Coding-Proxy-Secret: ""
+    coding-authelia:
+      forwardAuth:
+        address: http://authelia:9091/api/authz/forward-auth
+        trustForwardHeader: true
+        maxResponseBodySize: 8192
+        authResponseHeaders: [Remote-User, Remote-Groups, Remote-Email, Remote-Name]
+    coding-proxy-identity:
+      headers:
+        customRequestHeaders:
+          X-Coding-Proxy-Secret: __CODING_PROXY_SECRET__
+    coding-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+  services:
+    coding:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: http://192.168.1.61:8147

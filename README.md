@@ -1,5 +1,7 @@
 # Collaborative corpus coding
 
+The Raspberry Pi deployment with Traefik, Authelia and an existing PostgreSQL service is documented in [deploy/README.md](deploy/README.md).
+
 Django serves the admin dashboard and the independent coder workspaces. PostgreSQL stores corpus versions, personal codebooks, annotations, immutable submissions, and merge decisions. Codebook YAML files are available through import/export. The database is the live application store.
 
 ## Deployment
