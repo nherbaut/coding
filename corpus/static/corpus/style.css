@@ -540,3 +540,24 @@ dialog::backdrop {
 .memo-actions .delete-annotation {
   color: #a52b22;
 }
+
+.change-details {
+  margin: 12px 0 20px;
+  table-layout: fixed;
+}
+.change-details th,
+.change-details td {
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.concept-value {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+.review-color {
+  display: inline-block;
+  width: 48px;
+  height: 24px;
+  border: 1px solid #00000020;
+  border-radius: 4px;
+}

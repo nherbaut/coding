@@ -3,10 +3,10 @@
 ><a href="{% url 'results' submission.pk %}?format=csv">Export CSV</a>{% endblock %}{% block content %}
 <main class="dashboard">
   <h1>{{ snapshot.coder }} · {{ snapshot.case }}</h1>
-  <p>Submission {{ submission.pk }} · {{ submission.created }}</p>
+  <p>Submitted {{ submission.created }}</p>
   {% if audit %}
   <div class="notice">
-    Codebook reviewed. Shared version {{ audit.result_id }}.
+    Codebook review completed.
   </div>
   {% else %}
   <h2>Codebook changes</h2>
@@ -17,28 +17,16 @@
       value="{{ shared.pk }}"
     />{% for change in changes %}
     <article class="change">
-      <h3>
-        {{ change.operation|title }} · {% if change.incoming %}{{ change.incoming.name }}{% else %}{{ change.before.name }}{% endif %}
-      </h3>
-      {% if change.conflict %}
-      <p class="warning">
-        Concurrent shared change. Choose which version to retain.
-      </p>
-      {% endif %}
-      <div class="comparison">
-        <div>
-          <h4>Starting version</h4>
-          <pre>{{ change.before|pprint }}</pre>
-        </div>
-        <div>
-          <h4>Coder proposal</h4>
-          <pre>{{ change.incoming|pprint }}</pre>
-        </div>
-        <div>
-          <h4>Current shared version</h4>
-          <pre>{{ change.current|pprint }}</pre>
-        </div>
-      </div>
+      <h3>{{ change.heading }}</h3>
+      {% if change.conflict %}<p class="warning">The shared codebook has also changed. Compare the versions before deciding.</p>{% endif %}
+      {% if change.rows %}
+      <table class="change-details"><thead><tr><th>Change</th><th>Starting version</th><th>Coder proposal</th>{% if change.conflict %}<th>Shared now</th>{% endif %}</tr></thead>
+      <tbody>{% for row in change.rows %}<tr><th>{{ row.label }}</th>
+      <td>{% if row.kind == 'color' and row.before != '—' %}<span class="review-color" style="background-color:{{ row.before }}" aria-label="Starting highlight color"></span>{% else %}<div class="concept-value">{{ row.before }}</div>{% endif %}</td>
+      <td>{% if row.kind == 'color' and row.after != '—' %}<span class="review-color" style="background-color:{{ row.after }}" aria-label="Proposed highlight color"></span>{% else %}<div class="concept-value">{{ row.after }}</div>{% endif %}</td>
+      {% if change.conflict %}<td>{% if row.kind == 'color' and row.current != '—' %}<span class="review-color" style="background-color:{{ row.current }}" aria-label="Current shared highlight color"></span>{% else %}<div class="concept-value">{{ row.current }}</div>{% endif %}</td>{% endif %}
+      </tr>{% endfor %}</tbody></table>
+      {% else %}<p>Supporting source information was updated.</p>{% endif %}
       <label
         >Decision<select name="action_{{ change.id }}" required>
           <option value="">Choose…</option>
@@ -49,7 +37,7 @@
       ><label
         >Mapping target<select name="target_{{ change.id }}">
           <option value="">Choose a shared concept</option>
-          {% for code in shared.content.codes %}
+          {% for code in mapping_options %}
           <option value="{{ code.id }}">{{ code.name }}</option>
           {% endfor %}
         </select></label
@@ -64,7 +52,7 @@
   {% for annotation in snapshot.annotations %}
   <article class="annotation">
     <p>
-      {{ annotation.document_name }} · {{ annotation.start }}–{{ annotation.end }}
+      {{ annotation.document_name }}
     </p>
     <blockquote style="{{ annotation.highlight_style }}">{{ annotation.selected_text }}</blockquote>
     <p>
@@ -76,9 +64,9 @@
   <p>No passages coded in this submission.</p>
   {% endfor %}
   <h2>Document texts</h2>
-  {% for id,text in documents.items %}
+  {% for name,text in documents.items %}
   <details>
-    <summary>Document version {{ id }}</summary>
+    <summary>{{ name }}</summary>
     <pre class="fulltext">{% for segment in text %}{% if segment.style %}<mark style="{{ segment.style }}" title="{{ segment.title }}">{{ segment.text }}</mark>{% else %}{{ segment.text }}{% endif %}{% endfor %}</pre>
   </details>
   {% endfor %}

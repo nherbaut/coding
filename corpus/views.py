@@ -42,6 +42,7 @@ from .services import (
 )
 from .importers import import_zip
 from .invitations import queue_invitation_email
+from .codebook_review import describe_changes, concept_path
 from .colors import code_color, colored_book, highlight_style, highlighted_segments
 
 
@@ -411,6 +412,19 @@ def review(request, submission_id):
             submission.pk, request.user, int(request.POST["revision"]), decisions
         )
         return redirect("review", submission_id=submission.pk)
+    changes = describe_changes(
+        changes,
+        submission.assignment.session.base.content,
+        submission.snapshot["codebook"],
+        shared.content,
+    )
+    mapping_options = sorted(
+        [
+            dict(id=code["id"], name=concept_path(code["id"], shared.content))
+            for code in shared.content["codes"]
+        ],
+        key=lambda item: item["name"].casefold(),
+    )
     snapshot = deepcopy(submission.snapshot)
     snapshot["codebook"] = colored_book(snapshot["codebook"])
     lookup = {code["id"]: code for code in snapshot["codebook"]["codes"]}
@@ -423,7 +437,7 @@ def review(request, submission_id):
             highlight_style([code_color(code)]) if code["kind"] == "code" else ""
         )
     documents = {
-        d.pk: highlighted_segments(
+        d.document.name: highlighted_segments(
             d.text,
             [a for a in snapshot["annotations"] if a["document"] == d.pk],
             snapshot["codebook"]["codes"],
@@ -439,6 +453,7 @@ def review(request, submission_id):
             shared=shared,
             snapshot=snapshot,
             documents=documents,
+            mapping_options=mapping_options,
             audit=MergeAudit.objects.filter(submission=submission).first(),
         ),
     )
