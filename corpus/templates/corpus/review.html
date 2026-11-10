@@ -4,11 +4,12 @@
 <main class="dashboard">
   <h1>{{ snapshot.coder }} · {{ snapshot.case }}</h1>
   <p>Submitted {{ submission.created }}</p>
+  {% if withdrawn %}<div class="notice">This submission was withdrawn. Its saved coding remains available here, but it cannot be merged. Withdrawing a previously reviewed submission does not undo its shared codebook changes.</div>{% endif %}
   {% if audit %}
   <div class="notice">
     Codebook review completed.
   </div>
-  {% else %}
+  {% elif not withdrawn %}
   <h2>Codebook changes</h2>
   <form method="post" id="codebook-review">
     {% if changes %}<div class="review-batch-actions">

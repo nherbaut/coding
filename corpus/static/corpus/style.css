@@ -561,3 +561,5 @@ dialog::backdrop {
   border: 1px solid #00000020;
   border-radius: 4px;
 }
+
+button.danger { color: #a52b22; border-color: #e2b8b2; }

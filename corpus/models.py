@@ -55,6 +55,7 @@ class CodingSession(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     coder = models.CharField(max_length=200)
     email = models.EmailField(blank=True, default="")
+    deleted_at = models.DateTimeField(null=True, blank=True)
     base = models.ForeignKey(SharedCodebook, on_delete=models.PROTECT)
     codebook = models.JSONField()
     revision = models.PositiveIntegerField(default=0)
@@ -65,6 +66,7 @@ class CodingSession(models.Model):
 
 
 class Assignment(models.Model):
+    removed_at = models.DateTimeField(null=True, blank=True)
     session = models.ForeignKey(CodingSession, on_delete=models.PROTECT)
     case = models.ForeignKey(Case, on_delete=models.PROTECT)
     documents = models.ManyToManyField(DocumentVersion)
@@ -99,6 +101,16 @@ class Submission(models.Model):
         if self.pk:
             raise ValueError("Submissions are immutable")
         return super().save(*args, **kwargs)
+
+
+class SubmissionWithdrawal(models.Model):
+    submission = models.OneToOneField(
+        Submission, on_delete=models.PROTECT, related_name="withdrawal"
+    )
+    initiated_by = models.CharField(
+        max_length=10, choices=[("coder", "Coder"), ("admin", "Admin")]
+    )
+    created = models.DateTimeField(auto_now_add=True)
 
 
 class MergeAudit(models.Model):

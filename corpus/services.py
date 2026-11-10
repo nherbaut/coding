@@ -5,6 +5,7 @@ import secrets
 import uuid
 import yaml
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 from .colors import HEX_COLOR
 from .models import (
@@ -13,6 +14,8 @@ from .models import (
     CodingSession,
     SharedCodebook,
     Submission,
+    SubmissionWithdrawal,
+    SubmissionEmail,
     MergeAudit,
 )
 
@@ -88,11 +91,58 @@ def cancel_invitation_emails(session):
     ).update(cancelled_at=timezone.now(), body="", lease_token=None, locked_until=None)
 
 
-def issue_link(session):
-    token = secrets.token_urlsafe(32)
-    session.token_hash = hashlib.sha256(token.encode()).hexdigest()
-    session.save(update_fields=["token_hash"])
+def lock_active_session(session_id):
+    session = CodingSession.objects.select_for_update().get(pk=session_id)
+    if session.deleted_at:
+        raise Conflict("This coder session has been deleted.")
+    return session
+
+
+@transaction.atomic
+def delete_coder_session(session_id):
+    session = CodingSession.objects.select_for_update().get(pk=session_id)
+    if session.deleted_at:
+        return session
+    now = timezone.now()
+    session.deleted_at = now
+    session.token_hash = ""
+    session.revision += 1
+    session.save(update_fields=["deleted_at", "token_hash", "revision"])
+    Assignment.objects.filter(session=session, removed_at__isnull=True).update(
+        removed_at=now, revision=F("revision") + 1
+    )
     cancel_invitation_emails(session)
+    return session
+
+
+@transaction.atomic
+def remove_assignment(assignment_id, expected):
+    session_id = Assignment.objects.values_list("session_id", flat=True).get(
+        pk=assignment_id
+    )
+    session = lock_active_session(session_id)
+    assignment = Assignment.objects.select_for_update().get(
+        pk=assignment_id, session=session
+    )
+    if assignment.removed_at:
+        return assignment
+    check_revision(assignment, expected)
+    assignment.removed_at = timezone.now()
+    assignment.revision += 1
+    assignment.save(update_fields=["removed_at", "revision"])
+    # Queued invitation bodies may still list this case. Do not email a stale list.
+    cancel_invitation_emails(session)
+    return assignment
+
+
+@transaction.atomic
+def issue_link(session):
+    active = lock_active_session(session.pk)
+    token = secrets.token_urlsafe(32)
+    active.token_hash = hashlib.sha256(token.encode()).hexdigest()
+    active.save(update_fields=["token_hash"])
+    session.token_hash = active.token_hash
+    cancel_invitation_emails(active)
     return "/access/#" + token
 
 
@@ -114,6 +164,7 @@ def create_session(coder, cases, email=""):
 
 @transaction.atomic
 def assign_case(session, case):
+    session = lock_active_session(session.pk)
     assignment, created = Assignment.objects.get_or_create(session=session, case=case)
     if created:
         versions = []
@@ -122,6 +173,10 @@ def assign_case(session, case):
             if latest:
                 versions.append(latest)
         assignment.documents.set(versions)
+    if assignment.removed_at:
+        assignment.removed_at = None
+        assignment.revision += 1
+        assignment.save(update_fields=["removed_at", "revision"])
     return assignment
 
 
@@ -159,10 +214,12 @@ def serialize_annotations(assignment):
 
 @transaction.atomic
 def submit(assignment_id, session_id, expected):
-    session = CodingSession.objects.select_for_update().get(pk=session_id)
+    session = lock_active_session(session_id)
     assignment = Assignment.objects.select_for_update().get(
         pk=assignment_id, session=session
     )
+    if assignment.removed_at:
+        raise Conflict("This case assignment has been removed.")
     check_revision(assignment, expected)
     if assignment.locked:
         raise Conflict("Case is already submitted")
@@ -188,6 +245,61 @@ def submit(assignment_id, session_id, expected):
 
     queue_submission_email(submission)
     return submission
+
+
+@transaction.atomic
+def withdraw_submission(
+    submission_id, initiated_by="admin", expected=None, coder_session=None
+):
+    submission = Submission.objects.select_related("assignment").get(pk=submission_id)
+    if coder_session is not None and submission.assignment.session_id != coder_session:
+        raise Conflict("This submission belongs to another coder session.")
+    session = lock_active_session(submission.assignment.session_id)
+    assignment = Assignment.objects.select_for_update().get(pk=submission.assignment_id)
+    if assignment.removed_at:
+        raise Conflict("This case assignment has been removed.")
+    if expected is not None:
+        check_revision(assignment, expected)
+    latest = assignment.submission_set.order_by("-pk").first()
+    _, created = SubmissionWithdrawal.objects.get_or_create(
+        submission=submission, defaults={"initiated_by": initiated_by}
+    )
+    if created:
+        # Already-sent notifications remain part of the delivery history.
+        SubmissionEmail.objects.filter(
+            submission=submission, sent_at__isnull=True
+        ).delete()
+        if latest and latest.pk == submission.pk and assignment.locked:
+            assignment.locked = False
+            assignment.revision += 1
+            assignment.save(update_fields=["locked", "revision"])
+    return assignment
+
+
+@transaction.atomic
+def reopen_assignment(
+    assignment_id, session_id=None, expected=None, initiated_by="admin"
+):
+    owner = Assignment.objects.values_list("session_id", flat=True).get(
+        pk=assignment_id
+    )
+    if session_id is not None and owner != session_id:
+        raise Conflict("This case belongs to another coder session.")
+    lock_active_session(owner)
+    assignment = Assignment.objects.select_for_update().get(pk=assignment_id)
+    if assignment.removed_at:
+        raise Conflict("This case assignment has been removed.")
+    if expected is not None:
+        check_revision(assignment, expected)
+    if not assignment.locked:
+        raise Conflict("This case is already open for editing.")
+    latest = assignment.submission_set.order_by("-pk").first()
+    if latest:
+        return withdraw_submission(latest.pk, initiated_by, expected, session_id)
+    assignment.locked = False
+    assignment.revision += 1
+    assignment.save(update_fields=["locked", "revision"])
+    return assignment
 
 
 def check_revision(obj, expected):
@@ -227,6 +339,11 @@ def merge_submission(submission_id, admin, revision, decisions):
     submission = Submission.objects.select_related("assignment__session__base").get(
         pk=submission_id
     )
+    # Serialize withdrawal and review in the same session/assignment lock order.
+    CodingSession.objects.select_for_update().get(pk=submission.assignment.session_id)
+    Assignment.objects.select_for_update().get(pk=submission.assignment_id)
+    if SubmissionWithdrawal.objects.filter(submission=submission).exists():
+        raise Conflict("This submission was withdrawn and cannot be merged.")
     # Serialize all shared revisions using the singleton initial revision row.
     SharedCodebook.objects.select_for_update().order_by("pk").first()
     shared = SharedCodebook.objects.order_by("-pk").first()

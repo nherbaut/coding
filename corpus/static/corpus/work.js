@@ -113,7 +113,10 @@ function render() {
     null,
     2,
   );
+  $("#submit-case").hidden = !!assignment?.locked;
   $("#submit-case").disabled = !assignment || assignment.locked || busy;
+  $("#unsubmit-case").hidden = !assignment?.locked;
+  $("#unsubmit-case").disabled = busy;
   $("#save-annotation").disabled = !assignment || assignment.locked || busy;
   $("#memo").disabled = !!assignment?.locked;
   $("#selection").textContent = selected?.selected_text || "";
@@ -163,7 +166,7 @@ function renderDraftStatus() {
     `${count} saved annotation${count === 1 ? "" : "s"}`;
   const pending = hasUnsavedAnnotation();
   $("#annotation-guidance").textContent = assignment?.locked
-    ? "Submitted case. Ask the admin to reopen it for changes."
+    ? "Submitted case. Use Unsubmit case to reopen it for changes."
     : pending
       ? chosenCodes.size
         ? "Unsaved annotation. Click Save annotation to keep this highlight."
@@ -523,7 +526,7 @@ function openAnnotationMemos(annotations) {
     const feedback = element(
       "p",
       owner.locked
-        ? "Submitted case. The admin must reopen it to edit memos."
+        ? "Submitted case. Use Unsubmit case to edit memos."
         : "",
       "memo-save-status",
     );
@@ -698,6 +701,24 @@ $("#cancel-edit").onclick = () => {
   render();
 };
 $("#code-search").oninput = renderCodes;
+$("#unsubmit-case").onclick = async () => {
+  if (busy || !assignment?.locked || !confirm("Unsubmit this case and reopen it for editing? The previous submission remains in the coding archive.")) return;
+  busy = true;
+  try {
+    await api(`/api/assignments/${assignment.id}/unsubmit/`, { revision: assignment.revision });
+    selected = null;
+    editing = null;
+    chosenCodes.clear();
+    $("#memo").value = "";
+    await reload();
+    status("Case reopened for editing");
+  } catch (error) {
+    status(error.message, true);
+  } finally {
+    busy = false;
+    render();
+  }
+};
 $("#submit-case").onclick = async () => {
   if (hasUnsavedAnnotation()) {
     status(

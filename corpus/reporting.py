@@ -61,7 +61,7 @@ def capture_report(filters):
     submissions = Submission.objects.filter(
         assignment_id__in=[a.pk for a in assignments],
         pk=Subquery(latest.values("pk")[:1]),
-    )
+    ).select_related("withdrawal")
     by_assignment = {s.assignment_id: s for s in submissions}
     audits = {
         a.submission_id: a
@@ -136,6 +136,14 @@ def capture_report(filters):
                 submitted_at=submitted,
                 source=source,
                 locked=assignment.locked,
+                session_deleted_at=(
+                    assignment.session.deleted_at.isoformat()
+                    if assignment.session.deleted_at
+                    else None
+                ),
+                assignment_removed_at=(
+                    assignment.removed_at.isoformat() if assignment.removed_at else None
+                ),
                 assignment_revision=assignment.revision,
                 codebook_revision=(
                     None if source == "submitted" else assignment.session.revision
@@ -281,6 +289,10 @@ def report_evidence(payload):
                     submission=record["submission"],
                     submitted_at=record["submitted_at"],
                     source=record["source"],
+                    archived=bool(
+                        record.get("session_deleted_at")
+                        or record.get("assignment_removed_at")
+                    ),
                     mappings=record["mappings"],
                     mapping_revision=record["mapping_revision"],
                 )

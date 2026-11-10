@@ -1,4 +1,4 @@
-{% extends 'corpus/base.html' %}{% block navigation %}<a href="{% url 'coding-report' %}">Coding reports</a><a
+{% extends 'corpus/base.html' %}{% load static %}{% block navigation %}<a href="{% url 'coding-archive' %}">Archived coding</a><a href="{% url 'coding-report' %}">Coding reports</a><a
   href="/exports/shared.yaml"
   >Export codebook</a
 >{% endblock %}{% block content %}
@@ -56,7 +56,8 @@
     </article>
   </section>
   <h2>Submitted cases</h2>
-  <table>
+  <p>Deleting a submitted case removes it from review and reopens its assignment if this is the latest submission. Coding history is retained in Archived coding.</p>
+  <table id="submitted-cases">
     <thead>
       <tr>
         <th>Coder</th>
@@ -74,8 +75,10 @@
         <td>{{ item.created }}</td>
         <td>
           <a href="{% url 'review' item.pk %}"
-            >Review submission {{ item.pk }}</a
-          >
+            >Review submission</a>
+          <form method="post" data-removal-confirm="Delete this submitted case from review? Its coding history will be retained. If this is the latest submission, the case will reopen for editing.">
+            {% csrf_token %}<input type="hidden" name="action" value="delete_submission"><input type="hidden" name="submission" value="{{ item.pk }}"><button class="secondary danger">Delete submitted case</button>
+          </form>
         </td>
         <td>{{ item.email_notification.status|default:'—' }}{% if item.email_notification.last_error %}<br><small>{{ item.email_notification.last_error }}</small>{% endif %}</td>
       </tr>
@@ -87,7 +90,8 @@
     </tbody>
   </table>
   <h2>Assignments</h2>
-  <table>
+  <p>Removing an assignment hides the case from the coder. Its coding remains available in reports. Reassigning the case restores its existing coding.</p>
+  <table id="coding-assignments">
     <tr>
       <th>Coder</th>
       <th>Case</th>
@@ -111,6 +115,10 @@
           </button>
         </form>
         {% endif %}
+        <form method="post" data-removal-confirm="Remove this case from the coder? Existing coding will be retained.">
+          {% csrf_token %}<input type="hidden" name="action" value="remove_assignment"><input type="hidden" name="assignment" value="{{ a.pk }}"><input type="hidden" name="revision" value="{{ a.revision }}">
+          <button class="secondary danger">Remove assignment</button>
+        </form>
       </td>
     </tr>
     {% endfor %}
@@ -119,7 +127,11 @@
   {% for session in sessions %}
   <article class="session">
     <h3>{{ session.coder }}</h3>
-    <p>{{ session.pk }}</p>
+    <form method="post" data-removal-confirm="Delete this coder session and remove all its assignments? Private access will be revoked. Existing coding will be retained.">
+      {% csrf_token %}<input type="hidden" name="action" value="delete_session"><input type="hidden" name="session" value="{{ session.pk }}">
+      <button class="secondary danger">Delete coder session</button>
+      <p><small>Revokes access and removes the session from this dashboard. Coding records stay available in the archive and reports.</small></p>
+    </form>
     <form method="post">
       {% csrf_token %}<input type="hidden" name="action" value="send_invitation"><input type="hidden" name="session" value="{{ session.pk }}">
       <label>Coder email<input name="email" type="email" maxlength="254" value="{{ session.email }}" required></label>
@@ -153,4 +165,5 @@
   </article>
   {% endfor %}
 </main>
+<script src="{% static 'corpus/dashboard.js' %}" defer></script>
 {% endblock %}

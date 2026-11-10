@@ -147,3 +147,23 @@ For the optional report browser check:
 ```sh
 PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome python manage.py test corpus.browser_reporting_tests
 ```
+
+## Removing sessions, assignments and submissions
+
+The administrator dashboard provides three actions, each with a confirmation dialog:
+
+- **Delete coder session** revokes the private link and existing workspace cookies, cancels queued invitations, and removes the session and its assignments from the active dashboard.
+- **Remove assignment** hides one case from its coder while leaving other assigned cases accessible. To restore it, add that case again under the coder session; its document versions, annotations and submitted status are preserved.
+- **Delete submitted case** withdraws that particular submission from the review queue. If it is the latest submission for its assignment, the case reopens for editing and resubmission. Removing an older submission does not unlock a newer one.
+
+These actions retain coding records. Open **Archived coding** in the dashboard navigation to inspect deleted sessions, removed assignments and withdrawn submissions, open retained coding in reports, or export archived submissions. Archived sessions and assignments remain available in coding reports and are labelled there. Withdrawn submissions are excluded from the latest-submissions report; their immutable snapshots remain available in the archive. Existing saved reports never change.
+
+Coders can also use **Unsubmit case** on a submitted case to reopen it themselves. Ownership and browser-tab revision checks still apply. Withdrawing a previously reviewed submission retains its review audit and does not undo already accepted shared-codebook changes. Pending submission emails are canceled when a submission is withdrawn; previously sent email history remains.
+
+Deletion/removal is enforced again under database locks when saving, submitting, issuing links and assigning cases, so a stale tab cannot resume a deleted session or modify a removed assignment. Existing corpus references in a personal codebook remain intact when their assignment is removed; adding new evidence from that removed assignment is prohibited.
+
+Optional browser check:
+
+```sh
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome python manage.py test corpus.browser_removal_tests
+```

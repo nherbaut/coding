@@ -18,13 +18,24 @@ def invitation_cipher():
 
 
 def queue_invitation_email(session, link):
+    from django.db import transaction
+    from .services import lock_active_session
+
+    with transaction.atomic():
+        active = lock_active_session(session.pk)
+        if not active.token_hash or active.token_hash != session.token_hash:
+            raise ValueError("Generate a new private link before sending an invitation")
+        return _queue_invitation_email(active, link)
+
+
+def _queue_invitation_email(session, link):
     if not settings.CASE_EMAIL_ENABLED:
         raise ValueError(
             "Configure transactional email before sending coder invitations"
         )
     validate_email(session.email)
     assignments = (
-        session.assignment_set.filter(locked=False)
+        session.assignment_set.filter(locked=False, removed_at__isnull=True)
         .select_related("case")
         .order_by("case__name")
     )

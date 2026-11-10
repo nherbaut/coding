@@ -10,7 +10,7 @@ from django.core.exceptions import ValidationError
 from functools import wraps
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db import transaction
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 from django.core.validators import validate_email
 from django.http import JsonResponse, HttpResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
@@ -33,6 +33,11 @@ from .services import (
     differences,
     issue_link,
     cancel_invitation_emails,
+    delete_coder_session,
+    remove_assignment,
+    lock_active_session,
+    reopen_assignment,
+    withdraw_submission,
     load_book,
     merge_submission,
     serialize_annotations,
@@ -71,6 +76,7 @@ def current_session(request):
     session = get_object_or_404(CodingSession, pk=identity) if identity else None
     if (
         not session
+        or session.deleted_at
         or not session.token_hash
         or not secrets.compare_digest(
             request.session.get("coder_token_hash", ""), session.token_hash
@@ -91,7 +97,9 @@ def exchange(request):
     if not isinstance(token, str) or len(token) != 43:
         raise ValueError("Invalid private link")
     digest = hashlib.sha256(token.encode()).hexdigest()
-    session = get_object_or_404(CodingSession, token_hash=digest)
+    session = get_object_or_404(
+        CodingSession, token_hash=digest, deleted_at__isnull=True
+    )
     request.session.cycle_key()
     request.session["coder_session"] = str(session.pk)
     request.session["coder_token_hash"] = digest
@@ -106,7 +114,9 @@ def workspace(request):
 def state(request):
     session = current_session(request)
     assignments = []
-    for a in Assignment.objects.filter(session=session).select_related("case"):
+    for a in Assignment.objects.filter(
+        session=session, removed_at__isnull=True
+    ).select_related("case"):
         assignments.append(
             dict(
                 id=a.pk,
@@ -151,9 +161,12 @@ def state(request):
 def annotation(request, assignment_id):
     session = current_session(request)
     # Always lock session before assignment, matching submission/codebook operations.
-    session = CodingSession.objects.select_for_update().get(pk=session.pk)
+    session = lock_active_session(session.pk)
     a = get_object_or_404(
-        Assignment.objects.select_for_update(), pk=assignment_id, session=session
+        Assignment.objects.select_for_update(),
+        pk=assignment_id,
+        session=session,
+        removed_at__isnull=True,
     )
     body = json.loads(request.body)
     check_revision(a, body["revision"])
@@ -215,7 +228,7 @@ def annotation(request, assignment_id):
 @transaction.atomic
 def codebook(request):
     session = current_session(request)
-    session = CodingSession.objects.select_for_update().get(pk=session.pk)
+    session = lock_active_session(session.pk)
     body = json.loads(request.body)
     check_revision(session, body["revision"])
     book = (
@@ -242,13 +255,18 @@ def codebook(request):
     # Validate explicit corpus excerpts against this coder’s assigned versions.
     versions = {
         d.pk: d
-        for a in Assignment.objects.filter(session=session)
+        for a in Assignment.objects.filter(session=session, removed_at__isnull=True)
         for d in a.documents.all()
     }
     for code in book["codes"]:
         for reference in code.get("references", []):
             if reference.get("type") == "corpus":
                 d = versions.get(reference.get("document"))
+                if not d and reference in before.get(code["id"], {}).get(
+                    "references", []
+                ):
+                    # Retain previously validated evidence when its case is removed.
+                    continue
                 if (
                     not d
                     or d.sha256 != reference.get("hash")
@@ -268,9 +286,27 @@ def codebook(request):
 @api_errors
 def complete(request, assignment_id):
     session = current_session(request)
-    get_object_or_404(Assignment, pk=assignment_id, session=session)
+    get_object_or_404(
+        Assignment, pk=assignment_id, session=session, removed_at__isnull=True
+    )
     result = submit(assignment_id, session.pk, json.loads(request.body)["revision"])
     return JsonResponse({"submission": result.pk})
+
+
+@require_POST
+@api_errors
+def unsubmit(request, assignment_id):
+    session = current_session(request)
+    get_object_or_404(
+        Assignment, pk=assignment_id, session=session, removed_at__isnull=True
+    )
+    assignment = reopen_assignment(
+        assignment_id,
+        session.pk,
+        json.loads(request.body)["revision"],
+        initiated_by="coder",
+    )
+    return JsonResponse({"revision": assignment.revision, "locked": False})
 
 
 def yaml_response(book, filename):
@@ -322,21 +358,41 @@ def dashboard(request):
                 session = get_object_or_404(
                     CodingSession.objects.select_for_update(),
                     pk=request.POST["session"],
+                    deleted_at__isnull=True,
                 )
                 session.email = email
                 session.save(update_fields=["email"])
                 link = issue_link(session)
                 queue_invitation_email(session, link)
                 notice = "New private link and case list queued for " + email
-        elif action == "assign":
+        elif action in ("delete_session", "delete_invitation"):
             session = get_object_or_404(CodingSession, pk=request.POST["session"])
-            for case in Case.objects.filter(pk__in=request.POST.getlist("cases")):
-                assign_case(session, case)
+            delete_coder_session(session.pk)
+            notice = "Coder session deleted. Access revoked; coding records retained."
+        elif action == "remove_assignment":
+            assignment = get_object_or_404(
+                Assignment,
+                pk=request.POST["assignment"],
+                session__deleted_at__isnull=True,
+            )
+            remove_assignment(assignment.pk, int(request.POST["revision"]))
+            notice = "Assignment removed. Existing coding records have been retained."
+        elif action == "assign":
+            with transaction.atomic():
+                session = get_object_or_404(
+                    CodingSession.objects.select_for_update(),
+                    pk=request.POST["session"],
+                    deleted_at__isnull=True,
+                )
+                for case in Case.objects.filter(pk__in=request.POST.getlist("cases")):
+                    assign_case(session, case)
+                notice = "Cases assigned. Existing coding is restored when a removed case is reassigned."
         elif action in ("rotate", "revoke"):
             with transaction.atomic():
                 session = get_object_or_404(
                     CodingSession.objects.select_for_update(),
                     pk=request.POST["session"],
+                    deleted_at__isnull=True,
                 )
                 if action == "rotate":
                     notice = request.build_absolute_uri(issue_link(session))
@@ -346,15 +402,30 @@ def dashboard(request):
                     cancel_invitation_emails(session)
                     notice = "Private link revoked"
         elif action == "reopen":
-            with transaction.atomic():
-                a = get_object_or_404(
-                    Assignment.objects.select_for_update(),
-                    pk=request.POST["assignment"],
+            assignment = get_object_or_404(
+                Assignment,
+                pk=request.POST["assignment"],
+                removed_at__isnull=True,
+                session__deleted_at__isnull=True,
+            )
+            reopen_assignment(assignment.pk)
+            notice = "Case reopened. Its previous submission remains in the archive."
+        elif action == "delete_submission":
+            submission = get_object_or_404(
+                Submission,
+                pk=request.POST["submission"],
+                assignment__removed_at__isnull=True,
+                assignment__session__deleted_at__isnull=True,
+            )
+            assignment = withdraw_submission(submission.pk)
+            notice = (
+                "Submitted case removed from review. Its coding history is retained. "
+                + (
+                    "The case is open for editing."
+                    if not assignment.locked
+                    else "The newer submission remains locked."
                 )
-                a.locked = False
-                a.revision += 1
-                a.save()
-                notice = "Case reopened"
+            )
         elif action == "corpus":
             notice = f"Imported {import_zip(request.FILES['file'])} documents"
         elif action == "book":
@@ -376,17 +447,27 @@ def dashboard(request):
         dict(
             notice=notice,
             cases=Case.objects.all(),
-            sessions=CodingSession.objects.prefetch_related(
+            sessions=CodingSession.objects.filter(
+                deleted_at__isnull=True
+            ).prefetch_related(
                 Prefetch(
                     "invitation_emails",
                     queryset=InvitationEmail.objects.order_by("-pk").defer("body"),
                     to_attr="invitation_history",
                 )
             ),
-            assignments=Assignment.objects.select_related("session", "case"),
+            assignments=Assignment.objects.filter(
+                removed_at__isnull=True, session__deleted_at__isnull=True
+            ).select_related("session", "case"),
             submissions=Submission.objects.select_related(
                 "assignment__session", "assignment__case", "email_notification"
-            ).order_by("-pk"),
+            )
+            .filter(
+                assignment__removed_at__isnull=True,
+                assignment__session__deleted_at__isnull=True,
+                withdrawal__isnull=True,
+            )
+            .order_by("-pk"),
             shared=SharedCodebook.objects.order_by("-pk").first(),
         ),
     )
@@ -454,6 +535,7 @@ def review(request, submission_id):
             snapshot=snapshot,
             documents=documents,
             mapping_options=mapping_options,
+            withdrawn=hasattr(submission, "withdrawal"),
             audit=MergeAudit.objects.filter(submission=submission).first(),
         ),
     )
@@ -556,3 +638,28 @@ def health(request):
     with connection.cursor() as cursor:
         cursor.execute("SELECT 1")
     return JsonResponse({"status": "ok"})
+
+
+@staff_member_required
+def coding_archive(request):
+    return render(
+        request,
+        "corpus/archive.html",
+        dict(
+            sessions=CodingSession.objects.filter(deleted_at__isnull=False).order_by(
+                "-deleted_at"
+            ),
+            assignments=Assignment.objects.filter(
+                Q(removed_at__isnull=False) | Q(session__deleted_at__isnull=False)
+            )
+            .select_related("session", "case")
+            .order_by("-removed_at", "-pk"),
+            submissions=Submission.objects.filter(
+                Q(withdrawal__isnull=False)
+                | Q(assignment__removed_at__isnull=False)
+                | Q(assignment__session__deleted_at__isnull=False)
+            )
+            .select_related("assignment__session", "assignment__case", "withdrawal")
+            .order_by("-pk"),
+        ),
+    )

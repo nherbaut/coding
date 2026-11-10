@@ -1,5 +1,6 @@
 <article class="report-excerpt" data-excerpt="{{ excerpt.key }}">
   <h3>{{ excerpt.coder }} · {{ excerpt.case }}</h3><p>{{ excerpt.document }} · {% if excerpt.submitted_at %}Submitted {{ excerpt.submitted_at }}{% else %}Current work{% endif %}</p>
+  {% if excerpt.archived %}<p>Archived coding · session or assignment removed</p>{% endif %}
   <blockquote>{{ excerpt.selected_text }}</blockquote>
   <p>{% for code in excerpt.codes %}<span class="report-tag" style="{{ code.style }}" title="{{ code.path }}">{{ code.path }}{% if code.unmapped %} · not mapped{% endif %}</span>{% endfor %}</p>
   {% if excerpt.memo %}<p class="report-text"><strong>Annotation memo</strong><br>{{ excerpt.memo }}</p>{% endif %}
