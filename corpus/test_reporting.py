@@ -1,3 +1,4 @@
+from .models import Study
 from .test_support import new_study
 from .studies import publish_codebook
 from copy import deepcopy
@@ -51,7 +52,11 @@ def report_fixture():
             ),
         ],
     )
-    publish_codebook(study, book=book)
+    publish_codebook(
+        study,
+        book=book,
+        expected_revision=Study.objects.get(pk=study.pk).codebook_id,
+    )
     case = Case.objects.create(key="project", name="Research project", study=study)
     document = put_document(
         study,
@@ -291,7 +296,13 @@ class ReportingTests(TestCase):
         self.data["assignments"][0].annotation_set.update(memo="Changed later")
         new_book = deepcopy(self.data["book"])
         new_book["codes"][1]["name"] = "Changed shared name"
-        publish_codebook(self.study, book=new_book)
+        publish_codebook(
+            self.study,
+            book=new_book,
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
+        )
         response = self.client.get(response.url, {"format": "json"})
         data = json.loads(response.content)
         self.assertEqual(data["payload"], before)

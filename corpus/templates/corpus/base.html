@@ -10,7 +10,7 @@
   <body>
     <header>
       <a href="/">Corpus</a><span>Research coding workspace</span>
-      <nav>{% block navigation %}{% endblock %}</nav>
+      <nav>{% block navigation %}{% endblock %}{% if request.user.is_authenticated or coder %}<form method="post" action="{% url 'logout' %}" class="logout-form">{% csrf_token %}<button class="secondary">Log out</button></form>{% endif %}</nav>
     </header>
     {% if messages %}<section class="page-messages">{% for message in messages %}<p class="notice" role="status">{{ message }}</p>{% endfor %}</section>{% endif %}
     {% block content %}{% endblock %}

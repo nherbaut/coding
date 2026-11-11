@@ -64,8 +64,20 @@ class StudyTests(TestCase):
                 }
             ],
         }
-        publish_codebook(self.study, book)
-        publish_codebook(self.secret, book)
+        publish_codebook(
+            self.study,
+            book,
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
+        )
+        publish_codebook(
+            self.secret,
+            book,
+            expected_revision=(self.secret)
+            .__class__.objects.get(pk=(self.secret).pk)
+            .codebook_id,
+        )
         self.case = Case.objects.create(study=self.study, key="case", name="Alpha case")
         self.foreign_case = Case.objects.create(
             study=self.secret, key="case", name="Private beta case"
@@ -582,7 +594,13 @@ class StudyTests(TestCase):
             )
         ]
         with self.assertRaises(ValueError):
-            publish_codebook(self.study, book)
+            publish_codebook(
+                self.study,
+                book,
+                expected_revision=(self.study)
+                .__class__.objects.get(pk=(self.study).pk)
+                .codebook_id,
+            )
         book["codes"][0]["references"] = [
             dict(
                 type="corpus",
@@ -593,7 +611,13 @@ class StudyTests(TestCase):
                 quote="Review",
             )
         ]
-        revision = publish_codebook(self.study, book)
+        revision = publish_codebook(
+            self.study,
+            book,
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
+        )
         self.assertEqual(revision.study_id, self.study.pk)
 
     def test_same_zip_import_keys_are_independent_across_studies(self):

@@ -132,6 +132,12 @@ def capture_report(study, filters):
                 instructions=deepcopy(snapshot["instructions"]),
                 key=str(assignment.pk),
                 coder=snapshot["coder"],
+                coder_kind="admin" if assignment.session.admin_user_id else "private",
+                admin_username=(
+                    assignment.session.admin_user.username
+                    if assignment.session.admin_user_id
+                    else None
+                ),
                 session=snapshot["session"],
                 case=snapshot["case"],
                 case_key=snapshot["case_key"],

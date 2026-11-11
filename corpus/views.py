@@ -76,10 +76,13 @@ def api_errors(view):
 
 
 def current_session(request):
+    if hasattr(request, "admin_coding_session"):
+        return request.admin_coding_session
     identity = request.session.get("coder_session")
     session = get_object_or_404(CodingSession, pk=identity) if identity else None
     if (
         not session
+        or session.admin_user_id
         or session.deleted_at
         or not session.token_hash
         or not secrets.compare_digest(
@@ -102,7 +105,10 @@ def exchange(request):
         raise ValueError("Invalid private link")
     digest = hashlib.sha256(token.encode()).hexdigest()
     session = get_object_or_404(
-        CodingSession, token_hash=digest, deleted_at__isnull=True
+        CodingSession,
+        token_hash=digest,
+        deleted_at__isnull=True,
+        admin_user__isnull=True,
     )
     request.session.cycle_key()
     request.session["coder_session"] = str(session.pk)
@@ -113,7 +119,23 @@ def exchange(request):
 def workspace(request):
     session = current_session(request)
     return render(
-        request, "corpus/work.html", {"coder": session.coder, "study": session.study}
+        request,
+        "corpus/work.html",
+        {
+            "coder": session.coder,
+            "study": session.study,
+            "admin_coding": bool(session.admin_user_id),
+            "api_base": (
+                reverse("admin-coding", args=[session.study_id]) + "api/"
+                if session.admin_user_id
+                else "/api/"
+            ),
+            "personal_export_url": (
+                reverse("admin-coding-export", args=[session.study_id])
+                if session.admin_user_id
+                else "/work/codebook.yaml"
+            ),
+        },
     )
 
 
@@ -464,7 +486,11 @@ def dashboard(request, study_id):
             update_session_instructions(study, request.POST["session"])
             notice = "Study instructions updated for this coder. Submitted snapshots remain unchanged."
         elif action == "book":
-            publish_codebook(study, load_book(request.FILES["file"].read().decode()))
+            publish_codebook(
+                study,
+                load_book(request.FILES["file"].read().decode()),
+                expected_revision=int(request.POST["revision"]),
+            )
             study.refresh_from_db()
             notice = "Study codebook version published"
         else:

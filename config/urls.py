@@ -1,9 +1,29 @@
-from django.contrib.auth.views import LoginView, LogoutView
+from django.contrib.auth.views import LoginView
+from corpus import admin_tools
 from django.urls import path, include
 from corpus import views, study_views
 from corpus.reporting_views import coding_report
 
 study_urls = [
+    path("coding/", admin_tools.coding_workspace, name="admin-coding"),
+    path("coding/api/state/", admin_tools.coding_state),
+    path("coding/api/codebook/", admin_tools.coding_codebook),
+    path(
+        "coding/api/assignments/<int:assignment_id>/annotations/",
+        admin_tools.coding_annotation,
+    ),
+    path(
+        "coding/api/assignments/<int:assignment_id>/submit/",
+        admin_tools.coding_complete,
+    ),
+    path(
+        "coding/api/assignments/<int:assignment_id>/unsubmit/",
+        admin_tools.coding_unsubmit,
+    ),
+    path("coding/codebook.yaml", admin_tools.coding_export, name="admin-coding-export"),
+    path("codebook/", admin_tools.graph, name="study-codebook"),
+    path("codebook/state/", admin_tools.graph_state, name="codebook-state"),
+    path("codebook/publish/", admin_tools.graph_publish, name="codebook-publish"),
     path("", views.dashboard, name="dashboard"),
     path("settings/", study_views.study_settings, name="study-settings"),
     path("protocol/", study_views.study_protocol, name="study-protocol"),
@@ -28,7 +48,8 @@ urlpatterns = [
         ),
         name="login",
     ),
-    path("admin/logout/", LogoutView.as_view(next_page="/"), name="logout"),
+    path("logout/", admin_tools.logout, name="logout"),
+    path("signed-out/", admin_tools.signed_out, name="signed-out"),
     path("access/", views.access),
     path("access/exchange/", views.exchange),
     path("work/", views.workspace),

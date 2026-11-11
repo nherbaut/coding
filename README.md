@@ -88,7 +88,7 @@ make web-migrate
 
 Run migrations before starting the app. The mailer uses the same environment/image and waits for app health. Store TLS/proxy configuration outside the application repository. `deploy/` contains infrastructure templates; keep secrets out of those templates.
 
-This is a pre-production schema replacement. Existing application test data is disposable: recreate the dedicated application database/schema and initialize the current baseline migration. There are no data-conversion migrations, default studies, old global routes, or compatibility imports. LDAP and source research files are not reset.
+This is a pre-production application with a clean study-scoped baseline. Fresh installations run the normal migrations; current installations also apply the nullable admin-session ownership field and uniqueness constraint. There are no data-conversion layers, default studies, old global routes, or compatibility imports. LDAP and source research files are not reset.
 
 ## Transactional email
 
@@ -140,3 +140,17 @@ npm ci
 npm test
 npm run build
 ```
+
+### Logout and admin coding
+
+**Log out** ends the application session (including private-link access), then opens a public signed-out page. It does not sign out of Authelia, revoke invitation links, or remove coding. Returning to a protected admin page can immediately authenticate through SSO again. Original coder links remain usable. Authenticated pages and coding APIs use `no-store` responses.
+
+**Code full corpus** in each study is real coding included in reports. Each study admin gets a separate, persistent personal coding session using SSO, without a bearer link. Reopening it resumes existing coding and assigns new cases. Existing assignments keep their pinned document versions. Personal codebooks and instructions start from the current published revisions; later shared edits do not overwrite them. Use the normal submit/unsubmit and proposal review workflow. Admin sessions appear with an “admin” label in management and reports and cannot receive private links.
+
+### Graphical shared codebook
+
+Open **Codebook** to edit the published hierarchy. Select a node in the graph or keyboard-accessible hierarchy list, edit its properties, and use **Apply to draft**. **Add concept** creates a child of the selected concept; choose “Root concept” to make it a root. **Draw parent connection** lets you drag from parent to child, replacing the child's previous parent. Select an edge and **Delete selected connection** to make its child a root. Node deletion always asks whether to reparent children or remove the subtree; used identities can be archived instead.
+
+Undo/redo and all edits stay in the browser draft until **Save codebook** publishes one revision. **Discard changes** loads the latest shared version. A concurrent publication produces a conflict and retains the draft so it can be reconciled. Graph, YAML upload and proposal merges all require the expected shared revision. Moving nodes, pan/zoom, collapse/expand and automatic layout only change presentation. Unedited codebook and reference metadata is preserved; evidence memos and researcher rationale have separate fields. Leaving with unsaved changes triggers the browser warning.
+
+The graph uses locally bundled Cytoscape.js, dagre and edgehandles. Rebuild it with the existing frontend build command; the Docker image needs no Node runtime. Run `corpus.browser_admin_tools_tests` alongside the browser suite above to exercise graph connections, protected identities, conflicts, logout and admin coding end to end.

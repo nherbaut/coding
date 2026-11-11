@@ -23,7 +23,13 @@ class InvitationEmailTests(TestCase):
 
     def setUp(self):
         self.study = new_study()
-        publish_codebook(self.study, book={"version": 1, "codes": []})
+        publish_codebook(
+            self.study,
+            book={"version": 1, "codes": []},
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
+        )
         self.beta = Case.objects.create(
             key="beta", name="Beta project", study=self.study
         )

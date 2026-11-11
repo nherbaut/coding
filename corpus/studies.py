@@ -57,10 +57,16 @@ def create_study(owner, title, description=""):
 
 
 @transaction.atomic
-def publish_codebook(study, book):
+def publish_codebook(study, book, *, expected_revision):
     from .services import validate_book
 
     study = Study.objects.select_for_update().get(pk=study.pk)
+    from .services import Conflict
+
+    if study.codebook_id != expected_revision:
+        raise Conflict(
+            "Shared codebook changed. Reload and reconcile your draft before publishing."
+        )
     validate_book(book)
     from .models import DocumentVersion
     from .services import span
@@ -80,43 +86,16 @@ def publish_codebook(study, book):
                     raise ValueError(
                         "Codebook corpus evidence must match a document version in this study"
                     )
-    previous = study.codebook
-    if previous:
-        ids = {c["id"] for c in book["codes"]}
-        removed = {c["id"] for c in previous.content["codes"]} - ids
-        if removed:
-            from .models import Annotation, Submission, MergeAudit
-
-            referenced = {
-                identity
-                for codes in Annotation.objects.filter(
-                    assignment__session__study=study
-                ).values_list("codes", flat=True)
-                for identity in codes
-            }
-            referenced.update(
-                identity
-                for snapshot in Submission.objects.filter(
-                    assignment__session__study=study
-                ).values_list("snapshot", flat=True)
-                for annotation in snapshot["annotations"]
-                for identity in annotation["codes"]
-            )
-            for audit in MergeAudit.objects.filter(result__study=study).select_related(
-                "submission"
-            ):
-                used = {
-                    code
-                    for annotation in audit.submission.snapshot["annotations"]
-                    for code in annotation["codes"]
-                }
-                referenced.update(
-                    target
-                    for source, target in audit.mappings.items()
-                    if source in used
-                )
-            if removed & referenced:
-                raise ValueError("Archive referenced concepts instead of deleting them")
+    previous = {c["id"]: c for c in study.codebook.content["codes"]}
+    proposed = {c["id"]: c for c in book["codes"]}
+    referenced = referenced_concepts(study)
+    if (previous.keys() - proposed.keys()) & referenced:
+        raise ValueError("Archive referenced concepts instead of deleting them")
+    if any(
+        previous[i]["kind"] != proposed[i]["kind"]
+        for i in previous.keys() & proposed.keys() & referenced
+    ):
+        raise ValueError("Referenced concept types cannot change")
     revision = SharedCodebook.objects.create(study=study, content=deepcopy(book))
     study.codebook = revision
     study.save(update_fields=["codebook"])
@@ -224,3 +203,33 @@ def update_session_instructions(study, session_id):
         session.revision += 1
         session.save(update_fields=["instructions", "revision"])
     return session
+
+
+def referenced_concepts(study):
+    from .models import Annotation, Submission, MergeAudit
+
+    referenced = {
+        identity
+        for codes in Annotation.objects.filter(
+            assignment__session__study=study
+        ).values_list("codes", flat=True)
+        for identity in codes
+    }
+    for snapshot in Submission.objects.filter(
+        assignment__session__study=study
+    ).values_list("snapshot", flat=True):
+        referenced.update(
+            identity for a in snapshot["annotations"] for identity in a["codes"]
+        )
+    for audit in MergeAudit.objects.filter(result__study=study).select_related(
+        "submission"
+    ):
+        used = {
+            identity
+            for a in audit.submission.snapshot["annotations"]
+            for identity in a["codes"]
+        }
+        referenced.update(
+            target for source, target in audit.mappings.items() if source in used
+        )
+    return referenced

@@ -92,7 +92,13 @@ class ProxyAuthenticationTests(TestCase):
 
     def test_private_coder_links_remain_independent(self):
         self.study = new_study()
-        publish_codebook(self.study, book={"version": 1, "codes": []})
+        publish_codebook(
+            self.study,
+            book={"version": 1, "codes": []},
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
+        )
         session, link = create_session(self.study, "Coder", [])
         response = self.client.post(
             "/access/exchange/",
@@ -106,3 +112,14 @@ class ProxyAuthenticationTests(TestCase):
 
     def test_health_endpoint_is_available(self):
         self.assertEqual(self.client.get("/healthz/").status_code, 200)
+
+    def test_app_logout_keeps_sso_and_public_landing(self):
+        self.client.get("/", **self.headers())
+        self.client.post("/logout/")
+        landing = self.client.get("/signed-out/")
+        self.assertContains(landing, "Authelia remains signed in")
+        self.assertIn("no-store", landing["Cache-Control"])
+        self.assertEqual(self.client.get("/", **self.headers()).status_code, 200)
+        denied = self.client.get("/", **self.headers(HTTP_REMOTE_GROUPS="home"))
+        self.assertEqual(denied.status_code, 403)
+        self.assertIn("no-store", denied["Cache-Control"])

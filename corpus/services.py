@@ -142,6 +142,8 @@ def remove_assignment(assignment_id, expected):
 @transaction.atomic
 def issue_link(session):
     active = lock_active_session(session.pk)
+    if active.admin_user_id:
+        raise ValueError("Admin coding uses SSO, not private links")
     token = secrets.token_urlsafe(32)
     active.token_hash = hashlib.sha256(token.encode()).hexdigest()
     active.save(update_fields=["token_hash"])
@@ -242,6 +244,8 @@ def submit(assignment_id, session_id, expected):
             content=deepcopy(session.instructions.content),
         ),
         coder=session.coder,
+        coder_kind="admin" if session.admin_user_id else "private",
+        admin_username=session.admin_user.username if session.admin_user_id else None,
         session=str(session.pk),
         case=assignment.case.name,
         case_key=assignment.case.key,
@@ -432,7 +436,7 @@ def merge_submission(submission_id, admin, revision, decisions):
     validate_book(result)
     from .studies import publish_codebook
 
-    published = publish_codebook(study, result)
+    published = publish_codebook(study, result, expected_revision=revision)
     return MergeAudit.objects.create(
         submission=submission,
         admin=admin,

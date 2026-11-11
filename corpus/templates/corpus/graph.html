@@ -1,0 +1,25 @@
+{% extends 'corpus/base.html' %}{% load static %}{% block content %}
+<main class="graph-page">
+<h1>{{ study.title }} · Shared codebook</h1>{% include 'corpus/study_navigation.html' %}
+<p>Changes publish a new shared revision. Existing personal codebooks and submitted snapshots stay independent. Memos contain quoted evidence; keep interpretation in researcher rationale.</p>
+<form hidden>{% csrf_token %}</form>
+<div id="graph-config" data-state="{% url 'codebook-state' study.pk %}" data-publish="{% url 'codebook-publish' study.pk %}"></div>
+<div class="graph-toolbar"><button id="add-node">Add concept</button><button id="undo" class="secondary">Undo</button><button id="redo" class="secondary">Redo</button><button id="layout" class="secondary">Automatic layout</button><button id="fit" class="secondary">Fit</button><button id="expand-all" class="secondary">Expand all</button><button id="draw-edge" class="secondary" aria-pressed="false">Draw parent connection</button><button id="delete-edge" class="secondary" disabled>Delete selected connection</button><button id="publish-book">Save codebook</button><button id="discard" class="secondary">Discard changes</button></div>
+<p id="graph-status" role="status">Loading codebook…</p>
+<div class="graph-workspace">
+<aside class="graph-outline"><label>Find a concept<input id="graph-search" type="search"></label><p>Categories ▰ · Codes ● · Archived concepts are dashed. Select a concept to edit it.</p><div id="hierarchy-list" aria-label="Codebook hierarchy"></div></aside>
+<section id="codebook-graph" aria-label="Graphical codebook"></section>
+<aside class="graph-properties"><h2>Concept properties</h2><p id="no-concept">Select a concept or add one.</p><form id="node-properties" hidden>
+<label>Name<input id="node-name" required></label>
+<label>Type<select id="node-kind"><option value="category">Category</option><option value="code">Code</option></select></label>
+<label>Parent<select id="node-parent"></select></label>
+<label>Color<input id="node-color" type="color"></label>
+<label>Memo · verbatim evidence and citation<textarea id="node-memo" rows="5"></textarea></label>
+<label>Researcher rationale<textarea id="node-rationale" rows="4"></textarea></label>
+<label><input id="node-archived" type="checkbox"> Archived</label>
+<h3>References</h3><p>Unedited provenance fields are preserved.</p><div id="node-references"></div><button id="add-reference" type="button" class="secondary">Add reference</button>
+<div class="actions"><button>Apply to draft</button><button id="delete-node" type="button" class="secondary danger">Delete concept…</button><button id="collapse-node" type="button" class="secondary">Collapse / expand children</button></div>
+<p id="node-status" role="status"></p></form></aside></div>
+<dialog id="delete-dialog"><h2>Delete concept</h2><p id="delete-description"></p><label>Delete scope<select id="delete-scope"><option value="node">Only this concept; reparent its children</option><option value="subtree">This concept and all descendants</option></select></label><p id="delete-warning" role="status"></p><div class="actions"><button id="confirm-delete">Delete</button><button id="archive-instead" hidden>Archive instead</button><button id="cancel-delete" class="secondary">Cancel</button></div></dialog>
+</main><link rel="stylesheet" href="{% static 'corpus/graph.css' %}"><script src="{% static 'corpus/graph.js' %}" defer></script>
+{% endblock %}

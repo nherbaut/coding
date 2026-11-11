@@ -45,7 +45,7 @@
         ><button>Import corpus</button>
       </form>
       <form method="post" enctype="multipart/form-data">
-        {% csrf_token %}<input type="hidden" name="action" value="book" /><label
+        {% csrf_token %}<input type="hidden" name="action" value="book" /><input type="hidden" name="revision" value="{{ shared.pk }}"><label
           >Codebook YAML<input
             type="file"
             name="file"
@@ -126,14 +126,14 @@
   <h2>Coder sessions</h2>
   {% for session in sessions %}
   <article class="session">
-    <h3>{{ session.coder }}</h3>
+    <h3>{{ session.coder }}{% if session.admin_user_id %} · Admin coding{% endif %}</h3>
     <form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_instructions"><input type="hidden" name="session" value="{{ session.pk }}"><p>{% if session.instructions_id == study.instructions_id %}Current study instructions{% else %}Earlier study instructions{% endif %}</p><button class="secondary">Update study instructions</button></form>
     <form method="post" data-removal-confirm="Delete this coder session and remove all its assignments? Private access will be revoked. Existing coding will be retained.">
       {% csrf_token %}<input type="hidden" name="action" value="delete_session"><input type="hidden" name="session" value="{{ session.pk }}">
       <button class="secondary danger">Delete coder session</button>
       <p><small>Revokes access and removes the session from this dashboard. Coding records stay available in the archive and reports.</small></p>
     </form>
-    <form method="post">
+    {% if not session.admin_user_id %}<form method="post">
       {% csrf_token %}<input type="hidden" name="action" value="send_invitation"><input type="hidden" name="session" value="{{ session.pk }}">
       <label>Coder email<input name="email" type="email" maxlength="254" value="{{ session.email }}" required></label>
       <button>Generate and email new link</button>
@@ -162,7 +162,7 @@
           {% endfor %}
         </select></label
       ><button>Add assignments</button>
-    </form>
+    </form>{% else %}<p>SSO access only. All cases are assigned automatically when this admin opens their workspace.</p>{% endif %}
   </article>
   {% endfor %}
 </main>

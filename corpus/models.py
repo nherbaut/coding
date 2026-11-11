@@ -186,6 +186,23 @@ class SharedCodebook(models.Model):
 
 
 class CodingSession(models.Model):
+    admin_user = models.ForeignKey(
+        "auth.User",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="admin_coding_sessions",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["study", "admin_user"],
+                condition=models.Q(deleted_at__isnull=True, admin_user__isnull=False),
+                name="active_admin_study_session_unique",
+            )
+        ]
+
     study = models.ForeignKey(
         Study, on_delete=models.CASCADE, related_name="coder_sessions"
     )

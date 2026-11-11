@@ -34,6 +34,9 @@ class MarkdownBrowserTests(StaticLiveServerTestCase):
                     )
                 ],
             ),
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
         )
         case = Case.objects.create(
             key="markdown", name="Markdown project", study=self.study

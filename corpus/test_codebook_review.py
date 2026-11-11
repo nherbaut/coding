@@ -39,7 +39,13 @@ class ReadableReviewTests(TestCase):
                 dict(id=removed, kind="code", name="Retired concept", parent=None),
             ],
         )
-        publish_codebook(self.study, book=book)
+        publish_codebook(
+            self.study,
+            book=book,
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
+        )
         case = Case.objects.create(key="project", name="Project", study=self.study)
         session, _ = create_session(self.study, "Alice", [case])
         incoming = deepcopy(book)
@@ -67,7 +73,13 @@ class ReadableReviewTests(TestCase):
         submission = submit(Assignment.objects.get(session=session).pk, session.pk, 0)
         current = deepcopy(book)
         current["codes"][2]["memo"] = "Shared evidence"
-        publish_codebook(self.study, book=current)
+        publish_codebook(
+            self.study,
+            book=current,
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
+        )
         admin = get_user_model().objects.create_superuser(
             "admin", "admin@example.org", "password"
         )

@@ -49,7 +49,13 @@ class WorkflowTests(TestCase):
                 )
             ],
         )
-        publish_codebook(self.study, book=self.book)
+        publish_codebook(
+            self.study,
+            book=self.book,
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
+        )
         self.case = Case.objects.create(key="case", name="Project", study=self.study)
         self.document = put_document(
             self.study,
@@ -256,7 +262,13 @@ class WorkflowTests(TestCase):
         submission = self.make_submission(proposal)
         current = deepcopy(self.book)
         current["codes"][0]["name"] = "Admin name"
-        shared = publish_codebook(self.study, book=current)
+        shared = publish_codebook(
+            self.study,
+            book=current,
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
+        )
         self.assertTrue(
             next(
                 (c for c in differences(submission, shared) if c["id"] == self.identity)
@@ -287,7 +299,13 @@ class WorkflowTests(TestCase):
         submission = self.make_submission(proposal)
         current = deepcopy(self.book)
         current["codes"][0]["name"] = "Another"
-        shared = publish_codebook(self.study, book=current)
+        shared = publish_codebook(
+            self.study,
+            book=current,
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
+        )
         count = SharedCodebook.objects.count()
         with self.assertRaises(ValueError):
             merge_submission(
@@ -365,7 +383,13 @@ class WorkflowTests(TestCase):
         original["codes"].append(
             dict(id=category, name="Group", kind="category", parent=None, memo="")
         )
-        base = publish_codebook(self.study, book=original)
+        base = publish_codebook(
+            self.study,
+            book=original,
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
+        )
         self.alice.base = base
         self.alice.save()
         proposal = deepcopy(original)
@@ -419,7 +443,13 @@ class WorkflowTests(TestCase):
                 dict(id=target, name="Existing target", kind="code", parent=None),
             ]
         )
-        base = publish_codebook(self.study, book=original)
+        base = publish_codebook(
+            self.study,
+            book=original,
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
+        )
         self.alice.base = base
         self.alice.save()
         proposal = deepcopy(original)
@@ -451,6 +481,9 @@ class ConcurrentSaveTests(TransactionTestCase):
         publish_codebook(
             self.study,
             book=dict(version=1, codes=[dict(id=identity, name="Review", kind="code")]),
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
         )
         case = Case.objects.create(
             key="concurrent", name="Concurrent case", study=self.study

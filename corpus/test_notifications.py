@@ -25,7 +25,13 @@ class SubmissionEmailTests(TestCase):
 
     def setUp(self):
         self.study = new_study()
-        publish_codebook(self.study, book={"version": 1, "codes": []})
+        publish_codebook(
+            self.study,
+            book={"version": 1, "codes": []},
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
+        )
         case = Case.objects.create(key="mail", name="Review case", study=self.study)
         put_document(
             self.study, "mail-doc", "Policy", "Review before merging", {}, [case]

@@ -12,15 +12,26 @@ const result = await build({
   legalComments: "none",
   target: "es2022",
 });
+const graph = await build({
+  entryPoints: ["graph.js"],
+  bundle: true,
+  minify: true,
+  format: "iife",
+  outfile: "../corpus/static/corpus/graph.js",
+  metafile: true,
+  legalComments: "none",
+  target: "es2022",
+});
 const packages = new Set(
-  Object.keys(result.metafile.inputs)
+  Object.keys({ ...result.metafile.inputs, ...graph.metafile.inputs })
     .filter((file) => file.includes("node_modules/"))
     .map((file) => {
       const parts = file.split("node_modules/").at(-1).split("/");
       return parts[0].startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
     }),
 );
-let notices = "Third-party notices for bundled Markdown and HTML parsers.\n\n";
+let notices =
+  "Third-party notices for bundled Markdown, HTML and graph libraries.\n\n";
 for (const name of [...packages].sort()) {
   const directory = path.join("node_modules", name),
     info = JSON.parse(fs.readFileSync(path.join(directory, "package.json"))),
@@ -29,4 +40,7 @@ for (const name of [...packages].sort()) {
       .find((file) => /^licen[sc]e(?:\.|$)/i.test(file));
   notices += `${name} ${info.version} (${info.license})\n${license ? fs.readFileSync(path.join(directory, license), "utf8") : "See package metadata for license terms."}\n\n`;
 }
-fs.writeFileSync("../corpus/static/corpus/markdown.LICENSE.txt", notices.trimEnd() + "\n");
+fs.writeFileSync(
+  "../corpus/static/corpus/markdown.LICENSE.txt",
+  notices.trimEnd() + "\n",
+);

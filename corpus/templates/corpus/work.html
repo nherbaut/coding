@@ -1,9 +1,11 @@
 {% extends 'corpus/base.html' %}{% load static %}{% block navigation %}<span
   >{{ coder }}</span
-><span>{{ study.title }}</span><button id="open-instructions" class="secondary">Questions and guidelines</button><a href="/work/codebook.yaml">Export YAML</a
+><span>{{ study.title }}</span><button id="open-instructions" class="secondary">Questions and guidelines</button><a href="{{ personal_export_url }}">Export YAML</a
 ><button id="open-book" class="secondary">Edit codebook</button>{% endblock %}{% block content %}
 <link rel="stylesheet" href="{% static 'corpus/markdown.css' %}">
 <form hidden>{% csrf_token %}</form>
+<div id="workspace-config" data-api-base="{{ api_base }}"></div>
+{% if admin_coding %}<div class="notice admin-coding-notice">Admin coding · These are real annotations included in study reports. Your personal codebook is independent of the shared editor. <a href="{% url 'dashboard' study.pk %}">Return to study</a></div>{% endif %}
 <div class="workbar">
   <strong id="case-title">Loading workspace…</strong
   ><span id="save-status" role="status"></span

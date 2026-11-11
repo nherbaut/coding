@@ -1,0 +1,133 @@
+.graph-page {
+  padding: 1.2rem 2rem;
+}
+.graph-page h1 {
+  margin: 0.3rem 0;
+}
+.graph-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+.graph-toolbar button {
+  margin: 0;
+}
+.graph-workspace {
+  display: grid;
+  grid-template-columns: 240px minmax(350px, 1fr) 340px;
+  gap: 1rem;
+  height: calc(100vh - 295px);
+  min-height: 580px;
+}
+.graph-outline,
+.graph-properties {
+  overflow: auto;
+  padding: 1rem;
+  background: #fff;
+  border: 1px solid #d7dfdb;
+  border-radius: 10px;
+}
+.graph-outline p,
+.graph-properties p {
+  font-size: 0.85rem;
+  color: #506259;
+}
+.graph-properties h2 {
+  margin-top: 0;
+}
+.graph-properties textarea {
+  width: 100%;
+  resize: vertical;
+}
+.graph-properties .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.graph-properties .actions button {
+  margin: 0;
+}
+.hierarchy-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0;
+}
+.hierarchy-row button {
+  margin: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.hierarchy-row .concept {
+  flex: 1;
+}
+.hierarchy-row .selected {
+  outline: 2px solid #26624c;
+}
+.hierarchy-row .archived {
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+.hierarchy-toggle {
+  padding: 0.2rem 0.4rem;
+  min-width: 26px;
+}
+.reference-card {
+  border: 1px solid #d7dfdb;
+  padding: 0.5rem;
+  margin: 0.5rem 0;
+}
+.reference-card summary {
+  cursor: pointer;
+}
+#codebook-graph {
+  background: #fafcfb;
+  border: 1px solid #d7dfdb;
+  border-radius: 10px;
+}
+#graph-status {
+  min-height: 1.5rem;
+}
+.logout-form {
+  display: inline;
+  margin: 0;
+}
+.logout-form button {
+  margin: 0;
+}
+.admin-coding-notice {
+  margin: 0;
+  border-radius: 0;
+  padding: 0.7rem 1rem;
+}
+@media (max-width: 1100px) {
+  .graph-workspace {
+    grid-template-columns: 180px minmax(280px, 1fr) 285px;
+  }
+  .graph-page {
+    padding: 1rem;
+  }
+}
+@media (max-width: 800px) {
+  .graph-workspace {
+    display: flex;
+    height: auto;
+    flex-direction: column;
+  }
+  #codebook-graph {
+    height: 500px;
+    order: -1;
+  }
+  .graph-outline {
+    max-height: 300px;
+  }
+  .graph-properties {
+    max-height: none;
+  }
+}
+.graph-properties input[type="color"] {
+  height: 40px;
+  padding: 4px;
+}

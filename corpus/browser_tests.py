@@ -31,6 +31,9 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
                     )
                 ],
             ),
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
         )
         book = SharedCodebook.objects.order_by("-pk").first()
         book.content["codes"].extend(
@@ -100,7 +103,13 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
                 ),
             ]
         )
-        publish_codebook(self.study, book=book.content)
+        publish_codebook(
+            self.study,
+            book=book.content,
+            expected_revision=(self.study)
+            .__class__.objects.get(pk=(self.study).pk)
+            .codebook_id,
+        )
         case = Case.objects.create(
             key="browser", name="Example OSS project", study=self.study
         )
