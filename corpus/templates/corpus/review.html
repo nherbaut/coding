@@ -5,6 +5,7 @@
 <main class="dashboard">
   <h1>{{ snapshot.coder }} · {{ snapshot.case }}</h1>
   <p>Submitted {{ submission.created }}</p>
+  <details><summary>Study instructions used for this submission</summary>{% for question in snapshot.instructions.content.research_questions %}<h3>{{ question.label }}</h3><div class="protocol-markdown" data-simple-markdown>{{ question.text }}</div>{% endfor %}{% for guideline in snapshot.instructions.content.guidelines %}<h3>{{ guideline.title }}</h3><div class="protocol-markdown" data-simple-markdown>{{ guideline.text }}</div>{% endfor %}</details>
   {% if withdrawn %}<div class="notice">This submission was withdrawn. Its saved coding remains available here, but it cannot be merged. Withdrawing a previously reviewed submission does not undo its shared codebook changes.</div>{% endif %}
   {% if audit %}
   <div class="notice">

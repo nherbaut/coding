@@ -22,6 +22,7 @@ from .reporting import (
     visible_excerpts,
 )
 from .views import api_errors
+from .exports import csv_cell
 from .studies import get_study
 from django.urls import reverse
 
@@ -58,13 +59,7 @@ def attachment(content, content_type, name):
     return response
 
 
-def safe_csv(value):
-    # Spreadsheet programs interpret formula prefixes even in quoted CSV cells.
-    value = str(value) if value is not None else ""
-    return "'" + value if value.lstrip().startswith(("=", "+", "-", "@")) else value
-
-
-def report_csv(rows, concepts, summary=False):
+def report_csv(rows, concepts, payload, summary=False):
     stream = io.StringIO(newline="")
     if summary:
         fields = [
@@ -131,9 +126,40 @@ def report_csv(rows, concepts, summary=False):
             }
             for e in rows
         ]
+    fields = ["study_id", "study", *fields]
+    if summary:
+        fields += [
+            "current_instructions_revision",
+            "current_research_questions",
+            "current_coding_guidelines",
+        ]
+        for row in data:
+            row.update(
+                current_instructions_revision=payload["current_instructions"][
+                    "revision"
+                ],
+                current_research_questions=payload["current_instructions"]["content"][
+                    "research_questions"
+                ],
+                current_coding_guidelines=payload["current_instructions"]["content"][
+                    "guidelines"
+                ],
+            )
+    else:
+        fields += ["instructions_revision", "research_questions", "coding_guidelines"]
+        for row, excerpt in zip(data, rows):
+            row.update(
+                instructions_revision=excerpt["instructions"]["revision"],
+                research_questions=excerpt["instructions"]["content"][
+                    "research_questions"
+                ],
+                coding_guidelines=excerpt["instructions"]["content"]["guidelines"],
+            )
+    for row in data:
+        row.update(study_id=payload["study"]["id"], study=payload["study"]["title"])
     writer = csv.DictWriter(stream, fieldnames=fields)
     writer.writeheader()
-    writer.writerows({key: safe_csv(row.get(key)) for key in fields} for row in data)
+    writer.writerows({key: csv_cell(row.get(key)) for key in fields} for row in data)
     return stream.getvalue()
 
 
@@ -295,7 +321,9 @@ def coding_report(request, study_id, report_id=None):
     if format in ("csv", "summary-csv"):
         summary_concepts = [selected] if selected else concepts
         return attachment(
-            report_csv(rows, summary_concepts, summary=format == "summary-csv"),
+            report_csv(
+                rows, summary_concepts, payload, summary=format == "summary-csv"
+            ),
             "text/csv; charset=utf-8",
             (
                 "coding-report-summary.csv"

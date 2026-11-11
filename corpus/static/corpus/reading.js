@@ -79,4 +79,7 @@
       renderInto(root, formatted);
     }
   }
+  for (const node of document.querySelectorAll('[data-simple-markdown]')) {
+    CorpusMarkdown.render(node, node.textContent);
+  }
 })();

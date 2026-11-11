@@ -285,6 +285,7 @@ def report_evidence(payload):
                     end=annotation["end"],
                     selected_text=annotation["selected_text"],
                     memo=annotation.get("memo", ""),
+                    instructions=deepcopy(record["instructions"]),
                     original_codes=annotation["codes"],
                     original_code_details=[
                         dict(

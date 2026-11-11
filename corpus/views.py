@@ -48,6 +48,7 @@ from .services import (
     validate_book,
 )
 from .importers import import_zip
+from .exports import csv_cell
 from .studies import get_study, publish_codebook, update_session_instructions
 from .invitations import queue_invitation_email
 from .codebook_review import describe_changes, concept_path
@@ -330,7 +331,17 @@ def yaml_response(book, filename):
 
 
 def personal_export(request):
-    return yaml_response(current_session(request).codebook, "personal-codebook")
+    session = current_session(request)
+    book = deepcopy(session.codebook)
+    book["export_context"] = dict(
+        study=dict(id=str(session.study_id), title=session.study.title),
+        base_revision=session.base_id,
+        personal_revision=session.revision,
+        session_instructions=dict(
+            revision=session.instructions_id, content=session.instructions.content
+        ),
+    )
+    return yaml_response(book, f"study-{session.study_id}-personal-codebook")
 
 
 @admin_required
@@ -586,7 +597,15 @@ def shared_export(request, study_id):
     )
     if not shared:
         raise Http404
-    return yaml_response(shared.content, "shared-codebook")
+    book = deepcopy(shared.content)
+    book["export_context"] = dict(
+        study=dict(id=str(study.pk), title=study.title),
+        shared_revision=shared.pk,
+        current_study_instructions=dict(
+            revision=study.instructions_id, content=study.instructions.content
+        ),
+    )
+    return yaml_response(book, f"study-{study.pk}-shared-codebook")
 
 
 @admin_required
@@ -605,6 +624,15 @@ def results_export(request, study_id, submission_id):
         rows.append(
             dict(
                 **annotation,
+                study_id=str(study.pk),
+                study=submission.snapshot["study"]["title"],
+                instructions_revision=submission.snapshot["instructions"]["revision"],
+                research_questions=submission.snapshot["instructions"]["content"][
+                    "research_questions"
+                ],
+                coding_guidelines=submission.snapshot["instructions"]["content"][
+                    "guidelines"
+                ],
                 coder=submission.snapshot["coder"],
                 case=submission.snapshot["case"],
                 case_key=submission.snapshot["case_key"],
@@ -624,6 +652,11 @@ def results_export(request, study_id, submission_id):
     if request.GET.get("format") == "csv":
         stream = io.StringIO()
         fields = [
+            "study_id",
+            "study",
+            "instructions_revision",
+            "research_questions",
+            "coding_guidelines",
             "submission",
             "submitted_at",
             "coder",
@@ -646,15 +679,7 @@ def results_export(request, study_id, submission_id):
         writer.writeheader()
         for row in rows:
             writer.writerow(
-                {
-                    key: (
-                        json.dumps(value, ensure_ascii=False)
-                        if isinstance(value, (list, dict))
-                        else value
-                    )
-                    for key, value in row.items()
-                    if key in fields
-                }
+                {key: csv_cell(value) for key, value in row.items() if key in fields}
             )
         response = HttpResponse(stream.getvalue(), content_type="text/csv")
         response["Content-Disposition"] = (

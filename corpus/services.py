@@ -83,7 +83,10 @@ def validate_book(book):
 
 
 def load_book(text):
-    return validate_book(yaml.safe_load(text))
+    book = yaml.safe_load(text)
+    if isinstance(book, dict):
+        book.pop("export_context", None)
+    return validate_book(book)
 
 
 def cancel_invitation_emails(session):

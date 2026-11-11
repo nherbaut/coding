@@ -1,5 +1,7 @@
 from copy import deepcopy
 import io
+import csv
+import yaml
 import json
 import uuid
 import zipfile
@@ -609,6 +611,32 @@ class StudyTests(TestCase):
         documents = list(Document.objects.filter(key="imported-doc"))
         self.assertEqual(len(documents), 2)
         self.assertNotEqual(documents[0].study_id, documents[1].study_id)
+
+    def test_exports_include_study_and_instruction_provenance(self):
+        from .services import load_book
+
+        book = yaml.safe_load(self.client.get(self.url("shared-export")).content)
+        self.assertEqual(book["export_context"]["study"]["id"], str(self.study.pk))
+        self.assertNotIn("export_context", load_book(yaml.safe_dump(book)))
+        response = self.client.get(
+            self.url("results", submission_id=self.submission.pk), {"format": "csv"}
+        )
+        row = next(csv.DictReader(io.StringIO(response.content.decode())))
+        self.assertEqual(row["study_id"], str(self.study.pk))
+        self.assertEqual(int(row["instructions_revision"]), self.coder.instructions_id)
+        for format in ("csv", "summary-csv"):
+            response = self.client.get(self.url("coding-report"), {"format": format})
+            row = next(csv.DictReader(io.StringIO(response.content.decode())))
+            self.assertEqual(row["study"], "Alpha study")
+            self.assertEqual(row["study_id"], str(self.study.pk))
+            self.assertIn(
+                (
+                    "current_research_questions"
+                    if format == "summary-csv"
+                    else "research_questions"
+                ),
+                row,
+            )
 
     @override_settings(
         CASE_EMAIL_ENABLED=True,
