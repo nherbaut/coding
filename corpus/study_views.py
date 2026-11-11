@@ -7,6 +7,7 @@ from django.http import Http404
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
 from django.core.validators import validate_email
+from django.views.decorators.http import require_http_methods
 from .models import (
     Study,
     StudyAdmin,
@@ -282,4 +283,49 @@ def study_corpus(request, study_id):
                 Lower("name"), "pk"
             ),
         ),
+    )
+
+
+@admin_required
+@require_http_methods(["GET", "POST"])
+def study_delete(request, study_id):
+    from .study_deletion import delete_study
+    from .services import Conflict
+    from .models import Annotation, Submission, CodingReport
+
+    study = get_study(request.user, study_id, owner=True)
+    error = ""
+    status = 200
+    if request.method == "POST":
+        try:
+            delete_study(study.pk, request.user, request.POST.get("confirmation", ""))
+        except Conflict as exception:
+            error = str(exception)
+            status = 409
+        except ValueError as exception:
+            error = str(exception)
+            status = 400
+        else:
+            messages.success(request, f"Study “{study.title}” permanently deleted.")
+            return redirect("study-list")
+    return render(
+        request,
+        "corpus/study_delete.html",
+        dict(
+            study=study,
+            error=error,
+            counts=dict(
+                cases=study.cases.count(),
+                documents=study.documents.count(),
+                sessions=study.coder_sessions.count(),
+                annotations=Annotation.objects.filter(
+                    assignment__session__study=study
+                ).count(),
+                submissions=Submission.objects.filter(
+                    assignment__session__study=study
+                ).count(),
+                reports=CodingReport.objects.filter(study=study).count(),
+            ),
+        ),
+        status=status,
     )

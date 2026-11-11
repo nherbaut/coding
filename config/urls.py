@@ -5,6 +5,7 @@ from corpus import views, study_views
 from corpus.reporting_views import coding_report
 
 study_urls = [
+    path("delete/", study_views.study_delete, name="study-delete"),
     path("github/", github_views.status, name="github-status"),
     path("coding/", admin_tools.coding_workspace, name="admin-coding"),
     path(

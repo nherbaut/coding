@@ -1,0 +1,6 @@
+{% extends 'corpus/base.html' %}{% block content %}<main class="dashboard"><h1>Delete study · {{ study.title }}</h1>{% include 'corpus/study_navigation.html' %}
+<p class="notice study-delete-warning">This permanently deletes the study from this application. It cannot be undone.</p>
+<p>It removes {{ counts.cases }} cases, {{ counts.documents }} documents, {{ counts.sessions }} coder sessions, {{ counts.annotations }} annotations, {{ counts.submissions }} submitted snapshots and {{ counts.reports }} saved reports, along with the codebooks, instructions, admin invitations and email history. Private coder links stop working.</p>
+<p>Queued GitHub synchronizations and emails are removed. For GitHub studies, the remote repository, its files and its commits are retained.</p>
+{% if error %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
+<form method="post">{% csrf_token %}<label>Type the study title to confirm<input name="confirmation" required autocomplete="off" spellcheck="false"></label><p>Enter exactly: <strong>{{ study.title }}</strong></p><button class="study-delete-confirm">Permanently delete study</button> <a href="{% url 'study-settings' study.pk %}">Cancel</a></form></main>{% endblock %}

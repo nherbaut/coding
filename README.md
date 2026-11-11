@@ -168,3 +168,9 @@ Coders can use **View codebook** in the workspace to open a read-only graph in a
 **Create a study from GitHub** imports existing repository data or initializes an empty/README-only repository from a corpus ZIP and codebook YAML through a GitHub App, then freezes the corpus. A separate worker automatically publishes submitted coding, status changes and the shared codebook's replayable patch history. **GitHub** in study navigation shows synchronization status, conflicts, pause/resume and retry controls. Existing studies cannot be attached.
 
 See [GitHub setup, repository format and recovery](docs/GITHUB.md) for App registration, secure server configuration, the `codebook/` and `corpus/` layout, offline history verification and the required real-repository activation check. No GitHub credentials are bundled with this application.
+
+### Permanently delete a study
+
+The study owner can open **Settings and admins → Delete study…** and type the exact current study title to confirm. This removes the study and all its local corpus, coding, submissions, codebook/instruction revisions, reports, invitations, email records and GitHub synchronization jobs. Private links stop working; other studies and user accounts are retained. Remote GitHub files and commits remain in the repository. This operation cannot be undone.
+
+Deletion runs atomically and refuses active email/GitHub deliveries or locked coding operations. Wait for the operation to finish and retry; for GitHub, the owner can pause publication first. Invited study admins cannot delete a study. No extra migration is required for deletion.
