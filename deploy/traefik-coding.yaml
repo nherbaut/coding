@@ -1,7 +1,7 @@
 http:
   routers:
     coding-admin:
-      rule: "Host(`coding.home.nextnet.top`) && (Path(`/`) || PathPrefix(`/admin`) || PathPrefix(`/review`) || PathPrefix(`/exports`))"
+      rule: "Host(`coding.home.nextnet.top`) && (Path(`/`) || PathPrefix(`/admin`))"
       priority: 100
       entryPoints: [websecure]
       tls:

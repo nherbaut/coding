@@ -1,12 +1,12 @@
+from .test_support import new_study
+from .studies import publish_codebook
 from copy import deepcopy
 import csv
 import io
 import json
 import uuid
-
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase, override_settings
-
 from .importers import put_document
 from .models import (
     Annotation,
@@ -21,6 +21,7 @@ from .services import create_session, span, submit
 
 
 def report_fixture():
+    study = new_study()
     category, review, disclosure = [str(uuid.uuid4()) for _ in range(3)]
     book = dict(
         version=1,
@@ -50,17 +51,18 @@ def report_fixture():
             ),
         ],
     )
-    SharedCodebook.objects.create(content=book)
-    case = Case.objects.create(key="project", name="Research project")
+    publish_codebook(study, book=book)
+    case = Case.objects.create(key="project", name="Research project", study=study)
     document = put_document(
+        study,
         "policy",
         "AI_POLICY.md",
-        "A😀 human review and disclosure\n" + ("Uncoded policy text.\n" * 100),
+        "A😀 human review and disclosure\n" + "Uncoded policy text.\n" * 100,
         {"source": "https://example.org/policy"},
         [case],
     )
-    alice, link = create_session("Alice", [case])
-    bob, _ = create_session("Bob", [case])
+    alice, link = create_session(study, "Alice", [case])
+    bob, _ = create_session(study, "Bob", [case])
     assignments = [Assignment.objects.get(session=s) for s in (alice, bob)]
     for assignment, specs in zip(
         assignments,
@@ -83,6 +85,8 @@ def report_fixture():
     admin = get_user_model().objects.create_superuser(
         "report-admin", "admin@example.org", "test-password"
     )
+    study.owner = admin
+    study.save(update_fields=["owner"])
     return dict(
         category=category,
         review=review,
@@ -96,24 +100,32 @@ def report_fixture():
         submissions=submissions,
         admin=admin,
         link=link,
+        study=study,
     )
 
 
 class ReportingTests(TestCase):
+
     def setUp(self):
         self.data = report_fixture()
+        self.study = self.data["study"]
         self.client.force_login(self.data["admin"])
+        self.study = self.data["study"]
 
     def capture(self, **filters):
-        return capture_report(dict(source="submitted", mode="original", **filters))
+        return capture_report(
+            self.study, dict(source="submitted", mode="original", **filters)
+        )
 
     def test_category_counts_deduplicate_multicoded_passages_and_keep_coders_separate(
         self,
     ):
         payload = self.capture()
         concepts, rows = report_evidence(payload)
-        category = next(c for c in concepts if c["code"]["id"] == self.data["category"])
-        review = next(c for c in concepts if c["code"]["id"] == self.data["review"])
+        category = next(
+            (c for c in concepts if c["code"]["id"] == self.data["category"])
+        )
+        review = next((c for c in concepts if c["code"]["id"] == self.data["review"]))
         self.assertEqual(len(rows), 4)
         self.assertEqual(category["direct_count"], 0)
         self.assertEqual(
@@ -132,7 +144,7 @@ class ReportingTests(TestCase):
         )
         self.assertEqual(comparison["comparisons"][0]["text"], "😀")
         self.assertEqual(
-            "".join(s["text"] for s in comparison["panes"][0]["segments"]),
+            "".join((s["text"] for s in comparison["panes"][0]["segments"])),
             self.data["document"].text,
         )
 
@@ -147,19 +159,21 @@ class ReportingTests(TestCase):
         _, rows = report_evidence(payload)
         self.assertEqual(len(rows), 4)
         self.assertTrue(
-            all(e["memo"] == "Resubmitted memo" for e in rows if e["coder"] == "Alice")
+            all(
+                (e["memo"] == "Resubmitted memo" for e in rows if e["coder"] == "Alice")
+            )
         )
         self.assertNotIn("Later personal name", json.dumps(payload))
         self.assertEqual(len(payload["records"]), 2)
 
     def test_drafts_are_explicit_and_filters_limit_the_scope(self):
-        coder, _ = create_session("Carol", [self.data["case"]])
+        coder, _ = create_session(self.study, "Carol", [self.data["case"]])
         payload = self.capture()
         self.assertEqual(
             payload["missing"], [dict(coder="Carol", case="Research project")]
         )
         current = capture_report(
-            dict(source="current", mode="original", coder=str(coder.pk))
+            self.study, dict(source="current", mode="original", coder=str(coder.pk))
         )
         self.assertEqual(len(current["records"]), 1)
         self.assertIsNone(current["records"][0]["submission"])
@@ -171,7 +185,12 @@ class ReportingTests(TestCase):
 
     def test_submitted_documents_use_snapshot_versions_and_mismatch_is_explicit(self):
         doc = put_document(
-            "policy", "AI_POLICY.md", "A😀 changed policy", {}, [self.data["case"]]
+            self.study,
+            "policy",
+            "AI_POLICY.md",
+            "A😀 changed policy",
+            {},
+            [self.data["case"]],
         )
         alice = self.data["assignments"][0]
         alice.documents.set([doc])
@@ -189,7 +208,9 @@ class ReportingTests(TestCase):
         comparison = comparison_view(payload, rows, {})
         self.assertFalse(comparison["same_version"])
         self.assertEqual(comparison["comparisons"], [])
-        response = self.client.get("/review/reports/", {"view": "compare"})
+        response = self.client.get(
+            f"/admin/studies/{self.study.pk}/reports/", {"view": "compare"}
+        )
         self.assertContains(response, "Different document versions")
 
     def test_same_names_do_not_map_and_accepted_mappings_do(self):
@@ -212,12 +233,12 @@ class ReportingTests(TestCase):
             assignment.annotation_set.update(codes=[identity])
             Assignment.objects.filter(pk=assignment.pk).update(locked=False)
             submit(assignment.pk, coder.pk, 1)
-        payload = capture_report(dict(source="submitted", mode="shared"))
+        payload = capture_report(self.study, dict(source="submitted", mode="shared"))
         concepts, rows = report_evidence(payload)
         self.assertEqual(
             len([c for c in concepts if c["name"] == "Personal concept"]), 2
         )
-        self.assertTrue(all(e["direct"][0].startswith("unmapped:") for e in rows))
+        self.assertTrue(all((e["direct"][0].startswith("unmapped:") for e in rows)))
         alice_sub = self.data["assignments"][0].submission_set.latest("pk")
         shared = SharedCodebook.objects.latest("pk")
         MergeAudit.objects.create(
@@ -229,33 +250,39 @@ class ReportingTests(TestCase):
             mappings={incoming[0]: self.data["review"]},
         )
         concepts, rows = report_evidence(
-            capture_report(dict(source="submitted", mode="shared"))
+            capture_report(self.study, dict(source="submitted", mode="shared"))
         )
         self.assertTrue(
             all(
-                e["direct"] == ["shared:" + self.data["review"]]
-                for e in rows
-                if e["coder"] == "Alice"
+                (
+                    e["direct"] == ["shared:" + self.data["review"]]
+                    for e in rows
+                    if e["coder"] == "Alice"
+                )
             )
         )
         self.assertTrue(
             all(
-                e["direct"][0].startswith("unmapped:")
-                for e in rows
-                if e["coder"] == "Bob"
+                (
+                    e["direct"][0].startswith("unmapped:")
+                    for e in rows
+                    if e["coder"] == "Bob"
+                )
             )
         )
-        current = capture_report(dict(source="current", mode="shared"))
-        self.assertTrue(all(not r["mappings"] for r in current["records"]))
+        current = capture_report(self.study, dict(source="current", mode="shared"))
+        self.assertTrue(all((not r["mappings"] for r in current["records"])))
 
     def test_report_pages_exports_and_saved_scope_are_frozen(self):
         for view in ("codes", "compare"):
-            response = self.client.get("/review/reports/", {"view": view})
+            response = self.client.get(
+                f"/admin/studies/{self.study.pk}/reports/", {"view": view}
+            )
             self.assertEqual(response.status_code, 200)
             self.assertContains(response, "Alice")
             self.assertContains(response, "Bob")
         response = self.client.post(
-            "/review/reports/",
+            f"/admin/studies/{self.study.pk}/reports/",
             dict(name="Final evidence", source="submitted", mode="original"),
         )
         self.assertEqual(response.status_code, 302)
@@ -264,7 +291,7 @@ class ReportingTests(TestCase):
         self.data["assignments"][0].annotation_set.update(memo="Changed later")
         new_book = deepcopy(self.data["book"])
         new_book["codes"][1]["name"] = "Changed shared name"
-        SharedCodebook.objects.create(content=new_book)
+        publish_codebook(self.study, book=new_book)
         response = self.client.get(response.url, {"format": "json"})
         data = json.loads(response.content)
         self.assertEqual(data["payload"], before)
@@ -276,27 +303,38 @@ class ReportingTests(TestCase):
         with self.assertRaises(ValueError):
             saved.save()
         for format in ("csv", "summary-csv", "html"):
-            export = self.client.get(f"/review/reports/{saved.pk}/", {"format": format})
+            export = self.client.get(
+                f"/admin/studies/{self.study.pk}/reports/{saved.pk}/",
+                {"format": format},
+            )
             self.assertEqual(export.status_code, 200)
             self.assertIn("attachment", export["Content-Disposition"])
-        csv_export = self.client.get(f"/review/reports/{saved.pk}/", {"format": "csv"})
+        csv_export = self.client.get(
+            f"/admin/studies/{self.study.pk}/reports/{saved.pk}/",
+            {"format": "csv"},
+        )
         rows = list(csv.DictReader(io.StringIO(csv_export.content.decode())))
         self.assertEqual(len(rows), 4)
         self.assertEqual(rows[0]["document_hash"], self.data["document"].sha256)
         self.assertIn("😀", rows[0]["selected_text"])
         html = self.client.get(
-            f"/review/reports/{saved.pk}/", {"format": "html"}
+            f"/admin/studies/{self.study.pk}/reports/{saved.pk}/",
+            {"format": "html"},
         ).content.decode()
         self.assertNotIn('<link rel="stylesheet"', html)
         self.assertIn("Policy source", html)
         self.assertIn("Category evidence", html)
         self.assertEqual(
-            self.client.post(f"/review/reports/{saved.pk}/", {}).status_code, 400
+            self.client.post(
+                f"/admin/studies/{self.study.pk}/reports/{saved.pk}/",
+                {},
+            ).status_code,
+            400,
         )
 
     def test_concept_filter_and_csv_escaping(self):
         response = self.client.get(
-            "/review/reports/",
+            f"/admin/studies/{self.study.pk}/reports/",
             {"code": "original:" + self.data["review"], "format": "json"},
         )
         self.assertEqual(json.loads(response.content)["counts"]["passages"], 3)
@@ -305,16 +343,18 @@ class ReportingTests(TestCase):
             memo='=HYPERLINK("https://example.org") <script>alert(1)</script>'
         )
         response = self.client.get(
-            "/review/reports/", {"source": "current", "view": "compare"}
+            f"/admin/studies/{self.study.pk}/reports/",
+            {"source": "current", "view": "compare"},
         )
         self.assertNotContains(response, "<script>alert(1)</script>")
         self.assertContains(response, "&lt;script&gt;alert(1)&lt;/script&gt;")
         response = self.client.get(
-            "/review/reports/", {"source": "current", "format": "csv"}
+            f"/admin/studies/{self.study.pk}/reports/",
+            {"source": "current", "format": "csv"},
         )
         rows = list(csv.DictReader(io.StringIO(response.content.decode())))
         self.assertTrue(
-            next(r["memo"] for r in rows if r["coder"] == "Alice").startswith(
+            next((r["memo"] for r in rows if r["coder"] == "Alice")).startswith(
                 "'=HYPERLINK"
             )
         )
@@ -326,20 +366,30 @@ class ReportingTests(TestCase):
             {"token": self.data["link"].split("#")[1]},
             content_type="application/json",
         )
-        self.assertEqual(coder.get("/review/reports/").status_code, 302)
         self.assertEqual(
-            coder.post("/review/reports/", {"name": "Unauthorized"}).status_code, 302
+            coder.get(f"/admin/studies/{self.study.pk}/reports/").status_code, 302
+        )
+        self.assertEqual(
+            coder.post(
+                f"/admin/studies/{self.study.pk}/reports/", {"name": "Unauthorized"}
+            ).status_code,
+            302,
         )
         self.assertEqual(CodingReport.objects.count(), 0)
         user = get_user_model().objects.create_user("regular", password="password")
         coder.force_login(user)
-        self.assertEqual(coder.get("/review/reports/").status_code, 302)
+        self.assertEqual(
+            coder.get(f"/admin/studies/{self.study.pk}/reports/").status_code, 302
+        )
         with override_settings(
             AUTHELIA_AUTH_ENABLED=True,
             AUTHELIA_TRUSTED_PROXIES=["192.168.1.60/32"],
             AUTHELIA_PROXY_SECRET="test-secret-with-at-least-thirty-two-characters",
         ):
-            self.assertEqual(self.client.get("/review/reports/").status_code, 403)
+            self.assertEqual(
+                self.client.get(f"/admin/studies/{self.study.pk}/reports/").status_code,
+                403,
+            )
 
     def test_personal_names_and_moves_remain_on_their_own_excerpts(self):
         alice = self.data["alice"]
@@ -348,9 +398,9 @@ class ReportingTests(TestCase):
         )
         alice.save()
         self.data["assignments"][0].annotation_set.update(memo="Alice memo")
-        payload = capture_report(dict(source="current", mode="original"))
+        payload = capture_report(self.study, dict(source="current", mode="original"))
         concepts, rows = report_evidence(payload)
-        review = next(c for c in concepts if c["code"]["id"] == self.data["review"])
+        review = next((c for c in concepts if c["code"]["id"] == self.data["review"]))
         self.assertTrue(review["variants"])
         for row in rows:
             names = {c["name"] for c in row["codes"]}
@@ -359,14 +409,16 @@ class ReportingTests(TestCase):
                     "Maintainer capacity" if row["coder"] == "Alice" else "Review",
                     names,
                 )
-        category = next(c for c in concepts if c["code"]["id"] == self.data["category"])
+        category = next(
+            (c for c in concepts if c["code"]["id"] == self.data["category"])
+        )
         self.assertEqual(category["counts"]["passages"], 4)
 
     def test_saved_report_survives_serialization_and_later_mapping_changes(self):
         from django.core import serializers
 
         response = self.client.post(
-            "/review/reports/",
+            f"/admin/studies/{self.study.pk}/reports/",
             dict(name="Before review", source="submitted", mode="shared"),
         )
         saved = CodingReport.objects.get()
@@ -389,19 +441,26 @@ class ReportingTests(TestCase):
         )
         self.assertEqual(saved_json["payload"], original)
         self.assertTrue(
-            all(not r["mappings"] for r in saved_json["payload"]["records"])
+            all((not r["mappings"] for r in saved_json["payload"]["records"]))
         )
 
     def test_empty_scope_and_invalid_inputs(self):
-        case = Case.objects.create(key="empty", name="Empty case")
+        case = Case.objects.create(key="empty", name="Empty case", study=self.study)
         self.assertContains(
-            self.client.get("/review/reports/", {"case": case.pk}),
+            self.client.get(
+                f"/admin/studies/{self.study.pk}/reports/", {"case": case.pk}
+            ),
             "No coding versions match",
         )
         self.assertEqual(
-            self.client.get("/review/reports/", {"source": "invalid"}).status_code, 400
+            self.client.get(
+                f"/admin/studies/{self.study.pk}/reports/", {"source": "invalid"}
+            ).status_code,
+            400,
         )
         self.assertEqual(
-            self.client.get("/review/reports/", {"coder": "not-a-uuid"}).status_code,
+            self.client.get(
+                f"/admin/studies/{self.study.pk}/reports/", {"coder": "not-a-uuid"}
+            ).status_code,
             400,
         )

@@ -15,20 +15,23 @@ from .models import (
     MergeAudit,
     SharedCodebook,
     Submission,
+    Study,
 )
 from .services import serialize_annotations
 
 
 @transaction.atomic
-def capture_report(filters):
+def capture_report(study, filters):
     source = filters.get("source", "submitted")
     mode = filters.get("mode", "original")
     if source not in ("submitted", "current") or mode not in ("original", "shared"):
         raise ValueError(
             "Choose submitted or current coding and original or shared concepts."
         )
-    assignments = Assignment.objects.select_related("session__base", "case").order_by(
-        "case__name", "session__coder", "pk"
+    assignments = (
+        Assignment.objects.filter(session__study=study)
+        .select_related("session__base", "session__instructions", "case")
+        .order_by("case__name", "session__coder", "pk")
     )
     if filters.get("case"):
         assignments = assignments.filter(case_id=filters["case"])
@@ -53,8 +56,8 @@ def capture_report(filters):
             .filter(pk__in=[a.pk for a in assignments])
             .order_by("case__name", "session__coder", "pk")
         )
-    SharedCodebook.objects.select_for_update().order_by("pk").first()
-    shared = SharedCodebook.objects.order_by("-pk").first()
+    study = Study.objects.select_for_update().get(pk=study.pk)
+    shared = study.codebook
     latest = Submission.objects.filter(
         assignment_id=OuterRef("assignment_id")
     ).order_by("-pk")
@@ -94,6 +97,10 @@ def capture_report(filters):
                 case_metadata=assignment.case.metadata,
                 codebook=deepcopy(assignment.session.codebook),
                 base=assignment.session.base_id,
+                instructions=dict(
+                    revision=assignment.session.instructions_id,
+                    content=deepcopy(assignment.session.instructions.content),
+                ),
                 annotations=serialize_annotations(assignment),
             )
             document_ids = list(assignment.documents.values_list("pk", flat=True))
@@ -122,6 +129,7 @@ def capture_report(filters):
         mappings = deepcopy(audit.mappings) if audit else {}
         records.append(
             dict(
+                instructions=deepcopy(snapshot["instructions"]),
                 key=str(assignment.pk),
                 coder=snapshot["coder"],
                 session=snapshot["session"],
@@ -154,6 +162,10 @@ def capture_report(filters):
         )
     return dict(
         schema_version=1,
+        study=dict(id=str(study.pk), title=study.title, description=study.description),
+        current_instructions=dict(
+            revision=study.instructions_id, content=deepcopy(study.instructions.content)
+        ),
         generated_at=timezone.now().isoformat(),
         filters={**filters, "source": source, "mode": mode},
         shared_revision=shared.pk if shared else None,

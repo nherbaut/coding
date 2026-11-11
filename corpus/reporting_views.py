@@ -6,7 +6,7 @@ import json
 import uuid
 from pathlib import Path
 
-from django.contrib.admin.views.decorators import staff_member_required
+from .permissions import admin_required
 from django.contrib.staticfiles import finders
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
@@ -22,6 +22,8 @@ from .reporting import (
     visible_excerpts,
 )
 from .views import api_errors
+from .studies import get_study
+from django.urls import reverse
 
 
 def read_filters(data):
@@ -35,6 +37,17 @@ def read_filters(data):
     for key in ("document", "code"):
         if data.get(key):
             result[key] = data[key]
+    return result
+
+
+def study_filters(study, data):
+    result = read_filters(data)
+    if result.get("case"):
+        get_object_or_404(Case, study=study, pk=result["case"])
+    if result.get("coder"):
+        get_object_or_404(CodingSession, study=study, pk=result["coder"])
+    if result.get("document"):
+        get_object_or_404(Document, study=study, key=result["document"])
     return result
 
 
@@ -124,18 +137,23 @@ def report_csv(rows, concepts, summary=False):
     return stream.getvalue()
 
 
-@staff_member_required
+@admin_required
 @require_http_methods(["GET", "POST"])
 @api_errors
-def coding_report(request, report_id=None):
-    saved = get_object_or_404(CodingReport, pk=report_id) if report_id else None
+def coding_report(request, study_id, report_id=None):
+    study = get_study(request.user, study_id)
+    saved = (
+        get_object_or_404(CodingReport, study=study, pk=report_id)
+        if report_id
+        else None
+    )
     if request.method == "POST":
         if saved:
             return HttpResponseBadRequest(
                 "Saved reports cannot be changed. Generate a new report from the overview."
             )
-        filters = read_filters(request.POST)
-        payload = capture_report(filters)
+        filters = study_filters(study, request.POST)
+        payload = capture_report(study, filters)
         name = request.POST.get("name", "").strip() or "Coding report"
         if len(name) > 200:
             raise ValueError("Report names must be at most 200 characters.")
@@ -145,10 +163,14 @@ def coding_report(request, report_id=None):
                 "The selected concept is no longer in this scope. Refresh the report."
             )
         saved = CodingReport.objects.create(
-            name=name, created_by=request.user, payload=payload
+            study=study, name=name, created_by=request.user, payload=payload
         )
-        return redirect("saved-report", report_id=saved.pk)
-    payload = saved.payload if saved else capture_report(read_filters(request.GET))
+        return redirect("saved-report", study_id=study.pk, report_id=saved.pk)
+    payload = (
+        saved.payload
+        if saved
+        else capture_report(study, study_filters(study, request.GET))
+    )
     concepts, evidence = report_evidence(payload)
     selected_code = request.GET.get("code", payload["filters"].get("code", ""))
     # A changed corpus/coder/mode selection can legitimately remove a previously
@@ -229,6 +251,7 @@ def coding_report(request, report_id=None):
                 )
             )
     context = dict(
+        study=study,
         saved=saved,
         payload=payload,
         filters=payload["filters"],
@@ -239,12 +262,12 @@ def coding_report(request, report_id=None):
         totals=counts(rows),
         comparison=comparison,
         view=view,
-        cases=Case.objects.order_by("name"),
-        coders=CodingSession.objects.order_by("coder", "pk"),
-        documents=Document.objects.order_by("name"),
-        reports=CodingReport.objects.select_related("created_by").order_by("-created")[
-            :30
-        ],
+        cases=Case.objects.filter(study=study).order_by("name"),
+        coders=CodingSession.objects.filter(study=study).order_by("coder", "pk"),
+        documents=Document.objects.filter(study=study).order_by("name"),
+        reports=CodingReport.objects.filter(study=study)
+        .select_related("created_by")
+        .order_by("-created")[:30],
         download_base=download_base,
         report_base="corpus/base.html",
         code_query=query,

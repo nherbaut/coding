@@ -12,6 +12,7 @@
       <a href="/">Corpus</a><span>Research coding workspace</span>
       <nav>{% block navigation %}{% endblock %}</nav>
     </header>
+    {% if messages %}<section class="page-messages">{% for message in messages %}<p class="notice" role="status">{{ message }}</p>{% endfor %}</section>{% endif %}
     {% block content %}{% endblock %}
   </body>
 </html>

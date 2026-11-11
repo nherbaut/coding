@@ -1,11 +1,11 @@
+from .test_support import new_study
+from .studies import publish_codebook
 from copy import deepcopy
 from unittest.mock import patch
 import uuid
-
 from django.core import mail
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone
-
 from .importers import put_document
 from .invitations import queue_invitation_email
 from .models import (
@@ -37,8 +37,10 @@ from .test_reporting import report_fixture
 
 
 class RemovalTests(TestCase):
+
     def setUp(self):
         self.data = report_fixture()
+        self.study = self.data["study"]
         self.client.force_login(self.data["admin"])
         self.coder = Client()
         self.coder.post(
@@ -50,11 +52,13 @@ class RemovalTests(TestCase):
         self.assignment = self.data["assignments"][0]
         self.assignment.refresh_from_db()
         self.submission = self.data["submissions"][0]
+        self.study = self.data["study"]
 
     def test_delete_coder_hides_dashboard_and_revokes_cookie_and_original_link(self):
         original = deepcopy(self.submission.snapshot)
         response = self.client.post(
-            "/", {"action": "delete_session", "session": self.alice.pk}
+            f"/admin/studies/{self.study.pk}/",
+            {"action": "delete_session", "session": self.alice.pk},
         )
         self.assertContains(response, "Coder session deleted")
         self.assertNotContains(response, "<h3>Alice</h3>", html=True)
@@ -78,20 +82,28 @@ class RemovalTests(TestCase):
         self.assertEqual(
             Annotation.objects.filter(assignment=self.assignment).count(), 2
         )
-        self.assertContains(self.client.get("/review/archive/"), "Alice")
-        self.assertEqual(
-            self.client.get(f"/review/{self.submission.pk}/").status_code, 200
+        self.assertContains(
+            self.client.get(f"/admin/studies/{self.study.pk}/archive/"), "Alice"
         )
-        payload = capture_report({"source": "submitted", "mode": "original"})
+        self.assertEqual(
+            self.client.get(
+                f"/admin/studies/{self.study.pk}/reviews/{self.submission.pk}/"
+            ).status_code,
+            200,
+        )
+        payload = capture_report(
+            self.study, {"source": "submitted", "mode": "original"}
+        )
         self.assertTrue(
-            next(r for r in payload["records"] if r["coder"] == "Alice")[
+            next((r for r in payload["records"] if r["coder"] == "Alice"))[
                 "session_deleted_at"
             ]
         )
         self.assertEqual(len(report_evidence(payload)[1]), 4)
         self.assertEqual(
             self.client.post(
-                "/", {"action": "delete_session", "session": self.alice.pk}
+                f"/admin/studies/{self.study.pk}/",
+                {"action": "delete_session", "session": self.alice.pk},
             ).status_code,
             200,
         )
@@ -102,7 +114,7 @@ class RemovalTests(TestCase):
         delete_coder_session(self.alice.pk)
         for action in ("assign", "rotate", "revoke"):
             response = self.client.post(
-                "/",
+                f"/admin/studies/{self.study.pk}/",
                 {
                     "action": action,
                     "session": self.alice.pk,
@@ -113,7 +125,7 @@ class RemovalTests(TestCase):
         with override_settings(CASE_EMAIL_ENABLED=True):
             self.assertEqual(
                 self.client.post(
-                    "/",
+                    f"/admin/studies/{self.study.pk}/",
                     {
                         "action": "send_invitation",
                         "session": self.alice.pk,
@@ -126,7 +138,6 @@ class RemovalTests(TestCase):
             issue_link(stale)
         with self.assertRaises(Conflict):
             assign_case(stale, self.data["case"])
-        # Simulate a request that authenticated immediately before deletion.
         with patch("corpus.views.current_session", return_value=stale):
             self.assertEqual(
                 self.coder.post(
@@ -148,11 +159,15 @@ class RemovalTests(TestCase):
     def test_assignment_removal_preserves_other_cases_and_reassignment_restores_coding(
         self,
     ):
-        other = Case.objects.create(key="second", name="Second project")
-        doc = put_document("second", "SECOND.md", "Other source", {}, [other])
+        other = Case.objects.create(
+            key="second", name="Second project", study=self.study
+        )
+        doc = put_document(
+            self.study, "second", "SECOND.md", "Other source", {}, [other]
+        )
         retained = assign_case(self.alice, other)
         response = self.client.post(
-            "/",
+            f"/admin/studies/{self.study.pk}/",
             {
                 "action": "remove_assignment",
                 "assignment": self.assignment.pk,
@@ -183,7 +198,7 @@ class RemovalTests(TestCase):
             Annotation.objects.filter(assignment=self.assignment).count(), 2
         )
         response = self.client.post(
-            "/",
+            f"/admin/studies/{self.study.pk}/",
             {
                 "action": "assign",
                 "session": self.alice.pk,
@@ -204,7 +219,7 @@ class RemovalTests(TestCase):
 
     def test_stale_assignment_removal_fails_without_changing_records(self):
         response = self.client.post(
-            "/",
+            f"/admin/studies/{self.study.pk}/",
             {
                 "action": "remove_assignment",
                 "assignment": self.assignment.pk,
@@ -214,7 +229,9 @@ class RemovalTests(TestCase):
         self.assertEqual(response.status_code, 409)
         self.assignment.refresh_from_db()
         self.assertIsNone(self.assignment.removed_at)
-        self.assertEqual(self.client.get("/review/archive/").status_code, 200)
+        self.assertEqual(
+            self.client.get(f"/admin/studies/{self.study.pk}/archive/").status_code, 200
+        )
 
     def test_preserve_existing_codebook_references_but_deny_new_removed_document_references(
         self,
@@ -286,7 +303,8 @@ class RemovalTests(TestCase):
     ):
         before = deepcopy(self.submission.snapshot)
         response = self.client.post(
-            "/", {"action": "delete_submission", "submission": self.submission.pk}
+            f"/admin/studies/{self.study.pk}/",
+            {"action": "delete_submission", "submission": self.submission.pk},
         )
         self.assertContains(response, "Submitted case removed from review")
         self.assertNotContains(
@@ -302,11 +320,16 @@ class RemovalTests(TestCase):
             "admin",
         )
         self.assertContains(
-            self.client.get(f"/review/{self.submission.pk}/"),
+            self.client.get(
+                f"/admin/studies/{self.study.pk}/reviews/{self.submission.pk}/"
+            ),
             "This submission was withdrawn",
         )
         self.assertNotContains(
-            self.client.get(f"/review/{self.submission.pk}/"), "Apply review decisions"
+            self.client.get(
+                f"/admin/studies/{self.study.pk}/reviews/{self.submission.pk}/"
+            ),
+            "Apply review decisions",
         )
         with self.assertRaises(Conflict):
             merge_submission(
@@ -316,13 +339,21 @@ class RemovalTests(TestCase):
                 {},
             )
         self.assertEqual(
-            len(capture_report({"source": "submitted", "mode": "original"})["records"]),
+            len(
+                capture_report(self.study, {"source": "submitted", "mode": "original"})[
+                    "records"
+                ]
+            ),
             1,
         )
         new = submit(self.assignment.pk, self.alice.pk, self.assignment.revision)
         self.assertNotEqual(new.pk, self.submission.pk)
         self.assertEqual(
-            len(capture_report({"source": "submitted", "mode": "original"})["records"]),
+            len(
+                capture_report(self.study, {"source": "submitted", "mode": "original"})[
+                    "records"
+                ]
+            ),
             2,
         )
         self.assertEqual(
@@ -332,7 +363,6 @@ class RemovalTests(TestCase):
     def test_deleting_older_submission_does_not_unlock_newer_submission(self):
         reopen_assignment(self.assignment.pk)
         new = submit(self.assignment.pk, self.alice.pk, 2)
-        # Idempotent removal of the already-withdrawn old version.
         withdraw_submission(self.submission.pk)
         self.assignment.refresh_from_db()
         self.assertTrue(self.assignment.locked)
@@ -407,13 +437,19 @@ class RemovalTests(TestCase):
             },
             {"action": "delete_submission", "submission": self.submission.pk},
         ):
-            self.assertEqual(self.coder.post("/", body).status_code, 302)
-        self.assertEqual(self.coder.get("/review/archive/").status_code, 302)
+            self.assertEqual(
+                self.coder.post(f"/admin/studies/{self.study.pk}/", body).status_code,
+                302,
+            )
+        self.assertEqual(
+            self.coder.get(f"/admin/studies/{self.study.pk}/archive/").status_code, 302
+        )
         admin = Client(enforce_csrf_checks=True)
         admin.force_login(self.data["admin"])
         self.assertEqual(
             admin.post(
-                "/", {"action": "delete_session", "session": self.alice.pk}
+                f"/admin/studies/{self.study.pk}/",
+                {"action": "delete_session", "session": self.alice.pk},
             ).status_code,
             403,
         )

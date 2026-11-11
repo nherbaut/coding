@@ -1,0 +1,1 @@
+{% extends 'corpus/base.html' %}{% block content %}<main class="narrow"><h1>Admin sign-in</h1><form method="post">{% csrf_token %}{{ form.as_p }}<input type="hidden" name="next" value="{{ next }}"><button>Log in</button></form></main>{% endblock %}

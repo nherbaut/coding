@@ -12,7 +12,6 @@ ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver"
     ","
 )
 INSTALLED_APPS = [
-    "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -69,6 +68,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 USE_TZ = True
 TIME_ZONE = "UTC"
 LOGIN_URL = "/admin/login/"
+LOGIN_REDIRECT_URL = "/"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
@@ -88,6 +88,8 @@ AUTHELIA_TRUSTED_PROXIES = [
     for value in os.environ.get("AUTHELIA_TRUSTED_PROXIES", "").split(",")
     if value.strip()
 ]
+if not DEBUG and not AUTHELIA_AUTH_ENABLED:
+    raise RuntimeError("Deployed admin access requires Authelia")
 if AUTHELIA_AUTH_ENABLED:
     if len(AUTHELIA_PROXY_SECRET) < 32 or not AUTHELIA_TRUSTED_PROXIES:
         raise RuntimeError(
@@ -110,11 +112,6 @@ EMAIL_TIMEOUT = 15
 DEFAULT_FROM_EMAIL = os.environ.get("MAIL_FROM", "no-reply@localhost")
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
 CASE_EMAIL_ENABLED = os.environ.get("CASE_EMAIL_ENABLED", "0") == "1"
-CASE_SUBMISSION_EMAIL_TO = [
-    address.strip()
-    for address in os.environ.get("CASE_SUBMISSION_EMAIL_TO", "").split(",")
-    if address.strip()
-]
 if EMAIL_USE_TLS and EMAIL_USE_SSL:
     raise RuntimeError("Choose SMTP_STARTTLS or SMTP_TLS, not both")
 if CASE_EMAIL_ENABLED:
@@ -122,12 +119,9 @@ if CASE_EMAIL_ENABLED:
     from email.utils import parseaddr
     from urllib.parse import urlsplit
 
-    if not EMAIL_HOST or not CASE_SUBMISSION_EMAIL_TO:
-        raise RuntimeError(
-            "Submission email requires SMTP_HOST and CASE_SUBMISSION_EMAIL_TO"
-        )
-    for address in [parseaddr(DEFAULT_FROM_EMAIL)[1], *CASE_SUBMISSION_EMAIL_TO]:
-        validate_email(address)
+    if not EMAIL_HOST:
+        raise RuntimeError("Transactional email requires SMTP_HOST")
+    validate_email(parseaddr(DEFAULT_FROM_EMAIL)[1])
     if (
         urlsplit(PUBLIC_BASE_URL).scheme not in ("http", "https")
         or not urlsplit(PUBLIC_BASE_URL).hostname

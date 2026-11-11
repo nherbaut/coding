@@ -33,7 +33,7 @@ In Authelia's access-control rules, place these rules **before** the existing wi
 
 Create the LDAP group `coding-admins` and assign the intended administrators through LLDAP. Membership in `home` alone does not grant administration of this application. Validate Authelia configuration before restarting its container. Existing Authelia deprecation warnings are independent of this integration.
 
-The admin routes `/`, `/admin*`, `/review*` and `/exports*` use Authelia ForwardAuth. Traefik removes incoming identity headers, copies authenticated user/group response headers, then adds a shared proxy secret. Django checks that secret and the immediate proxy address, and evaluates the exact LDAP group on every request. It creates a local staff identity for audit records, with an unusable password. Administrator password sessions do not grant access in Authelia mode. Removing group membership takes effect when Authelia refreshes its LDAP identity information, and Django requires the group on every request it receives.
+The admin routes `/` and `/admin*` use Authelia ForwardAuth. Traefik removes incoming identity headers, copies authenticated user/group response headers, then adds a shared proxy secret. Django checks that secret and the immediate proxy address, and evaluates the exact LDAP group on every request. It creates a local staff identity for audit records, with an unusable password. Administrator password sessions do not grant access in Authelia mode. Removing group membership takes effect when Authelia refreshes its LDAP identity information, and Django requires the group on every request it receives.
 
 Private coder links, coder APIs, static assets and `/healthz/` use the independent public router. They retain the application's private-token authorization and CSRF checks. Coder requests receive no administrator identity from the proxy.
 
@@ -49,6 +49,12 @@ Integration references are the [Authelia Traefik documentation](https://www.auth
 
 ## Submission notifications
 
-Both `coding` and `coding-mailer` use `/home/nherbaut/server/coding.env`. Set `CASE_EMAIL_ENABLED=1` with the SMTP settings and `CASE_SUBMISSION_EMAIL_TO`. The worker starts after the web service is healthy and retries queued notifications after mail-server failures. After changing SMTP settings, recreate both services so they receive the updated environment. Check `docker compose logs coding-mailer` for delivery problems. Logs identify error types and SMTP status codes without recording passwords or provider response text.
+Both `coding` and `coding-mailer` use `/home/nherbaut/server/coding.env`. Set `CASE_EMAIL_ENABLED=1` with the SMTP settings. Configure submission recipients separately in each study’s settings. The worker starts after the web service is healthy and retries queued notifications after mail-server failures. After changing SMTP settings, recreate both services so they receive the updated environment. Check `docker compose logs coding-mailer` for delivery problems. Logs identify error types and SMTP status codes without recording passwords or provider response text.
 
 Coder invitations are delivered by `coding-mailer` using the same protected SMTP environment. The administrator enters the recipient in the session form. Pending private-link messages are encrypted at rest with the application's stable `DJANGO_SECRET_KEY`. Both the web and mailer services must run the updated image after invitation-related migrations.
+
+## Studies and pre-production reset
+
+Authelia grants application admin access through `coding-admins`; study owners and accepted study-admin invitations control individual study access. All study routes are under `/admin/studies/`. Root `/` lists owned and invited studies. No global review/export endpoints remain.
+
+This release replaces the pre-production application schema. Stop coding and coding-mailer, recreate only the dedicated coding database’s application schema, then start the new image and run its baseline migration. Existing test studies, coding, users, private links and queued emails are discarded. LDAP, SMTP configuration and the separate research source files remain unchanged. Do not apply the replacement baseline to an old populated schema. No default owner/study is created: the first authenticated admin creates a study from My studies.

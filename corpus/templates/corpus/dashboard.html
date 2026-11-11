@@ -1,9 +1,9 @@
-{% extends 'corpus/base.html' %}{% load static %}{% block navigation %}<a href="{% url 'coding-archive' %}">Archived coding</a><a href="{% url 'coding-report' %}">Coding reports</a><a
-  href="/exports/shared.yaml"
+{% extends 'corpus/base.html' %}{% load static %}{% block navigation %}<a href="{% url 'coding-archive' study.pk %}">Archived coding</a><a href="{% url 'coding-report' study.pk %}">Coding reports</a><a
+  href="{% url 'shared-export' study.pk %}"
   >Export codebook</a
 >{% endblock %}{% block content %}
 <main class="dashboard">
-  <h1>Research overview</h1>
+  <h1>{{ study.title }}</h1>{% include 'corpus/study_navigation.html' %}<p>{{ study.description }}</p>{% if not study.notification_emails %}<p class="study-warning">Submission notifications have no recipients yet. Add them in <a href="{% url 'study-settings' study.pk %}">study settings</a>.</p>{% endif %}
   {% if notice %}
   <div class="notice">{{ notice }}</div>
   {% endif %}
@@ -30,7 +30,7 @@
     </article>
     <article>
       <h2>Corpus and shared codebook</h2>
-      <p>Shared version {{ shared.pk|default:'—' }}</p>
+      <p>Study codebook version {{ shared.pk|default:'—' }}</p>
       <form method="post" enctype="multipart/form-data">
         {% csrf_token %}<input
           type="hidden"
@@ -74,7 +74,7 @@
         <td>{{ item.assignment.case.name }}</td>
         <td>{{ item.created }}</td>
         <td>
-          <a href="{% url 'review' item.pk %}"
+          <a href="{% url 'review' study.pk item.pk %}"
             >Review submission</a>
           <form method="post" data-removal-confirm="Delete this submitted case from review? Its coding history will be retained. If this is the latest submission, the case will reopen for editing.">
             {% csrf_token %}<input type="hidden" name="action" value="delete_submission"><input type="hidden" name="submission" value="{{ item.pk }}"><button class="secondary danger">Delete submitted case</button>
@@ -127,6 +127,7 @@
   {% for session in sessions %}
   <article class="session">
     <h3>{{ session.coder }}</h3>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_instructions"><input type="hidden" name="session" value="{{ session.pk }}"><p>{% if session.instructions_id == study.instructions_id %}Current study instructions{% else %}Earlier study instructions{% endif %}</p><button class="secondary">Update study instructions</button></form>
     <form method="post" data-removal-confirm="Delete this coder session and remove all its assignments? Private access will be revoked. Existing coding will be retained.">
       {% csrf_token %}<input type="hidden" name="action" value="delete_session"><input type="hidden" name="session" value="{{ session.pk }}">
       <button class="secondary danger">Delete coder session</button>

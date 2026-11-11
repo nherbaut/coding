@@ -1,19 +1,21 @@
-"""Optional browser coverage for report exploration, comparisons and exports."""
+from .test_support import new_study
+from .studies import publish_codebook
 
+"""Optional browser coverage for report exploration, comparisons and exports."""
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
-
 from .test_reporting import report_fixture
 
 
 class ReportBrowserTests(StaticLiveServerTestCase):
+
     def test_report_comparison_and_saved_exports(self):
         from playwright.sync_api import sync_playwright
 
         data = report_fixture()
+        self.study = data["study"]
         with sync_playwright() as playwright:
             options = dict(headless=True)
             if os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE"):
@@ -24,7 +26,10 @@ class ReportBrowserTests(StaticLiveServerTestCase):
             page = browser.new_page(viewport=dict(width=1500, height=1000))
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
-            page.goto(self.live_server_url + "/admin/login/?next=/")
+            page.goto(
+                self.live_server_url
+                + ("/admin/login/?next=" + f"/admin/studies/{self.study.pk}/")
+            )
             page.get_by_label("Username:").fill("report-admin")
             page.get_by_label("Password:").fill("test-password")
             page.get_by_role("button", name="Log in", exact=True).click()
@@ -73,7 +78,6 @@ class ReportBrowserTests(StaticLiveServerTestCase):
                 page.get_by_role("link", name="Excerpts CSV", exact=True).click()
             downloaded = download_info.value
             self.assertIn("document_hash", Path(downloaded.path()).read_text())
-            # Capture the selected evidence, then prove later edits cannot alter it.
             page.get_by_label("Report name", exact=True).fill("Browser final report")
             page.get_by_role("button", name="Save report snapshot", exact=True).click()
             self.assertTrue(

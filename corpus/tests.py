@@ -1,3 +1,5 @@
+from .test_support import new_study
+from .studies import publish_codebook
 from copy import deepcopy
 import hashlib
 import io
@@ -30,7 +32,9 @@ from .services import (
 
 
 class WorkflowTests(TestCase):
+
     def setUp(self):
+        self.study = new_study()
         self.identity = str(uuid.uuid4())
         self.book = dict(
             version=1,
@@ -45,17 +49,24 @@ class WorkflowTests(TestCase):
                 )
             ],
         )
-        SharedCodebook.objects.create(content=self.book)
-        self.case = Case.objects.create(key="case", name="Project")
+        publish_codebook(self.study, book=self.book)
+        self.case = Case.objects.create(key="case", name="Project", study=self.study)
         self.document = put_document(
-            "doc", "Policy", "A😀 human review\n", {"source": "AI.md"}, [self.case]
+            self.study,
+            "doc",
+            "Policy",
+            "A😀 human review\n",
+            {"source": "AI.md"},
+            [self.case],
         )
-        self.alice, self.link = create_session("Alice", [self.case])
-        self.bob, self.bob_link = create_session("Bob", [self.case])
+        self.alice, self.link = create_session(self.study, "Alice", [self.case])
+        self.bob, self.bob_link = create_session(self.study, "Bob", [self.case])
         self.assignment = Assignment.objects.get(session=self.alice)
         self.admin = get_user_model().objects.create_superuser(
             "admin", "admin@example.org", "password"
         )
+        self.study.owner = self.admin
+        self.study.save(update_fields=["owner"])
         self.client = Client()
         self.enter(self.client, self.link)
 
@@ -131,7 +142,8 @@ class WorkflowTests(TestCase):
         admin.force_login(self.admin)
         self.assertEqual(
             admin.post(
-                "/", {"action": "reopen", "assignment": self.assignment.pk}
+                f"/admin/studies/{self.study.pk}/",
+                {"action": "reopen", "assignment": self.assignment.pk},
             ).status_code,
             200,
         )
@@ -149,7 +161,10 @@ class WorkflowTests(TestCase):
     def test_revoke_and_csrf(self):
         admin = Client()
         admin.force_login(self.admin)
-        admin.post("/", {"action": "revoke", "session": self.alice.pk})
+        admin.post(
+            f"/admin/studies/{self.study.pk}/",
+            {"action": "revoke", "session": self.alice.pk},
+        )
         self.assertEqual(self.client.get("/api/state/").status_code, 404)
         self.assertEqual(self.enter(Client(), self.link).status_code, 404)
         csrf = Client(enforce_csrf_checks=True)
@@ -163,7 +178,7 @@ class WorkflowTests(TestCase):
         )
 
     def test_frozen_document_versions_yaml_and_references(self):
-        changed = put_document("doc", "Policy", "New text", {}, [self.case])
+        changed = put_document(self.study, "doc", "Policy", "New text", {}, [self.case])
         self.assertNotEqual(changed.pk, self.document.pk)
         self.assertEqual(
             list(self.assignment.documents.values_list("pk", flat=True)),
@@ -212,7 +227,6 @@ class WorkflowTests(TestCase):
             self.post("/api/codebook/", {"revision": 0, "codebook": book}).status_code,
             200,
         )
-
         annotation = Annotation.objects.get()
         self.assertEqual(
             self.annotate(
@@ -242,10 +256,10 @@ class WorkflowTests(TestCase):
         submission = self.make_submission(proposal)
         current = deepcopy(self.book)
         current["codes"][0]["name"] = "Admin name"
-        shared = SharedCodebook.objects.create(content=current)
+        shared = publish_codebook(self.study, book=current)
         self.assertTrue(
             next(
-                c for c in differences(submission, shared) if c["id"] == self.identity
+                (c for c in differences(submission, shared) if c["id"] == self.identity)
             )["conflict"]
         )
         audit = merge_submission(
@@ -273,7 +287,7 @@ class WorkflowTests(TestCase):
         submission = self.make_submission(proposal)
         current = deepcopy(self.book)
         current["codes"][0]["name"] = "Another"
-        shared = SharedCodebook.objects.create(content=current)
+        shared = publish_codebook(self.study, book=current)
         count = SharedCodebook.objects.count()
         with self.assertRaises(ValueError):
             merge_submission(
@@ -290,24 +304,35 @@ class WorkflowTests(TestCase):
         submission = submit(self.assignment.pk, self.alice.pk, 1)
         admin = Client()
         admin.force_login(self.admin)
-        self.assertContains(admin.get("/"), "Alice")
-        self.assertContains(admin.get(f"/review/{submission.pk}/"), "😀")
+        self.assertContains(admin.get(f"/admin/studies/{self.study.pk}/"), "Alice")
+        self.assertContains(
+            admin.get(f"/admin/studies/{self.study.pk}/reviews/{submission.pk}/"),
+            "😀",
+        )
         self.assertEqual(
             admin.post(
-                f"/review/{submission.pk}/", {"revision": self.alice.base_id}
+                f"/admin/studies/{self.study.pk}/reviews/{submission.pk}/",
+                {"revision": self.alice.base_id},
             ).status_code,
             302,
         )
-        result = admin.get(f"/exports/submissions/{submission.pk}/").json()
+        result = admin.get(
+            f"/admin/studies/{self.study.pk}/exports/submissions/{submission.pk}/"
+        ).json()
         self.assertEqual(result["results"][0]["document_hash"], self.document.sha256)
         self.assertEqual(result["results"][0]["shared_codes"], [self.identity])
         self.assertIn(
             "selected_text",
             admin.get(
-                f"/exports/submissions/{submission.pk}/?format=csv"
+                f"/admin/studies/{self.study.pk}/exports/submissions/{submission.pk}/?format=csv"
             ).content.decode(),
         )
-        self.assertEqual(self.client.get(f"/review/{submission.pk}/").status_code, 302)
+        self.assertEqual(
+            self.client.get(
+                f"/admin/studies/{self.study.pk}/reviews/{submission.pk}/"
+            ).status_code,
+            302,
+        )
         stream = io.StringIO()
         call_command("dumpdata", "corpus", stdout=stream)
         self.assertIn(self.document.sha256, stream.getvalue())
@@ -327,9 +352,9 @@ class WorkflowTests(TestCase):
             z.writestr("manifest.yaml", yaml.safe_dump(manifest))
             z.writestr("text.txt", "Hello")
         archive.seek(0)
-        import_zip(archive)
+        import_zip(self.study, archive)
         archive.seek(0)
-        import_zip(archive)
+        import_zip(self.study, archive)
         self.assertEqual(
             DocumentVersion.objects.filter(document__key="other-doc").count(), 1
         )
@@ -340,7 +365,7 @@ class WorkflowTests(TestCase):
         original["codes"].append(
             dict(id=category, name="Group", kind="category", parent=None, memo="")
         )
-        base = SharedCodebook.objects.create(content=original)
+        base = publish_codebook(self.study, book=original)
         self.alice.base = base
         self.alice.save()
         proposal = deepcopy(original)
@@ -350,7 +375,7 @@ class WorkflowTests(TestCase):
             submission.pk, self.admin, base.pk, {self.identity: {"action": "accept"}}
         )
         self.assertEqual(audit.result.content["codes"][0]["parent"], category)
-        other, link = create_session("Next", [self.case])
+        other, link = create_session(self.study, "Next", [self.case])
         a = Assignment.objects.get(session=other)
         other.codebook = deepcopy(other.codebook)
         other.codebook["codes"] = []
@@ -386,7 +411,7 @@ class WorkflowTests(TestCase):
             )
 
     def test_mapping_does_not_move_unaccepted_shared_children(self):
-        child, target = str(uuid.uuid4()), str(uuid.uuid4())
+        child, target = (str(uuid.uuid4()), str(uuid.uuid4()))
         original = deepcopy(self.book)
         original["codes"].extend(
             [
@@ -394,7 +419,7 @@ class WorkflowTests(TestCase):
                 dict(id=target, name="Existing target", kind="code", parent=None),
             ]
         )
-        base = SharedCodebook.objects.create(content=original)
+        base = publish_codebook(self.study, book=original)
         self.alice.base = base
         self.alice.save()
         proposal = deepcopy(original)
@@ -407,57 +432,9 @@ class WorkflowTests(TestCase):
             {self.identity: {"action": "map", "target": target}},
         )
         resulting_child = next(
-            c for c in audit.result.content["codes"] if c["id"] == child
+            (c for c in audit.result.content["codes"] if c["id"] == child)
         )
         self.assertEqual(resulting_child["parent"], self.identity)
-
-
-class ImportTests(TestCase):
-    def test_qualcoder_import_preserves_source_and_memos(self):
-        from pathlib import Path
-        import tempfile
-        import sqlite3
-        from .importers import import_qualcoder
-
-        with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / "data.qda"
-            with sqlite3.connect(source) as db:
-                db.executescript(
-                    """
-                    CREATE TABLE source (id INTEGER, name TEXT, fulltext TEXT, memo TEXT);
-                    CREATE TABLE cases (caseid INTEGER, name TEXT, memo TEXT);
-                    CREATE TABLE case_text (caseid INTEGER, fid INTEGER);
-                    CREATE TABLE code_cat (catid INTEGER, name TEXT, memo TEXT, supercatid INTEGER);
-                    CREATE TABLE code_name (cid INTEGER, name TEXT, memo TEXT, catid INTEGER, supercid INTEGER);
-                    INSERT INTO source VALUES (1,'Policy','Human review','Source provenance');
-                    INSERT INTO cases VALUES (1,'Project','Case metadata');
-                    INSERT INTO case_text VALUES (1,1);
-                    INSERT INTO code_cat VALUES (1,'Social','Quoted category reference',NULL);
-                    INSERT INTO code_name VALUES (1,'Review','Quoted code reference',1,NULL);
-                    INSERT INTO code_name VALUES (2,'Subcode','Quoted subcode reference',NULL,1);
-                """
-                )
-            before = hashlib.sha256(source.read_bytes()).hexdigest()
-            identity = str(uuid.uuid4())
-            registry = {"entities": {identity: {"kind": "code", "id": 1}}}
-            import_qualcoder(
-                source.parent, {"reference": "becker2015sustainability"}, registry
-            )
-            import_qualcoder(
-                source.parent, {"reference": "becker2015sustainability"}, registry
-            )
-            self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), before)
-        self.assertEqual(Annotation.objects.count(), 0)
-        self.assertEqual(DocumentVersion.objects.count(), 1)
-        book = SharedCodebook.objects.get().content
-        code = next(c for c in book["codes"] if c["id"] == identity)
-        child = next(c for c in book["codes"] if c["name"] == "Subcode")
-        self.assertEqual(code["memo"], "Quoted code reference")
-        self.assertEqual(child["parent"], identity)
-        self.assertEqual(
-            book["provenance"]["taxonomy"]["reference"], "becker2015sustainability"
-        )
-        self.assertEqual(Case.objects.get().metadata["memo"], "Case metadata")
 
 
 from concurrent.futures import ThreadPoolExecutor
@@ -466,23 +443,29 @@ from django.test import TransactionTestCase, skipUnlessDBFeature
 
 
 class ConcurrentSaveTests(TransactionTestCase):
+
     @skipUnlessDBFeature("has_select_for_update")
     def test_simultaneous_saves_serialize_and_reject_stale_revision(self):
+        self.study = new_study()
         identity = str(uuid.uuid4())
-        SharedCodebook.objects.create(
-            content=dict(
-                version=1, codes=[dict(id=identity, name="Review", kind="code")]
-            )
+        publish_codebook(
+            self.study,
+            book=dict(version=1, codes=[dict(id=identity, name="Review", kind="code")]),
         )
-        case = Case.objects.create(key="concurrent", name="Concurrent case")
-        document = put_document("concurrent-doc", "Text", "Human review", {}, [case])
-        session, link = create_session("Coder", [case])
+        case = Case.objects.create(
+            key="concurrent", name="Concurrent case", study=self.study
+        )
+        document = put_document(
+            self.study, "concurrent-doc", "Text", "Human review", {}, [case]
+        )
+        session, link = create_session(self.study, "Coder", [case])
         assignment = Assignment.objects.get(session=session)
         from threading import Barrier
 
         barrier = Barrier(2)
 
         def save():
+            self.study = new_study()
             close_old_connections()
             client = Client()
             client.post(

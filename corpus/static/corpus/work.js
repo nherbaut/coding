@@ -765,6 +765,17 @@ $("#submit-case").onclick = async () => {
     render();
   }
 };
+$("#open-instructions").onclick = () => {
+  const root=$("#study-instructions");root.replaceChildren();
+  for(const question of state.instructions.research_questions){
+    root.append(element("h3",question.label));const text=element("div");CorpusMarkdown.render(text,question.text);root.append(text);
+  }
+  for(const guideline of state.instructions.guidelines){
+    root.append(element("h3",guideline.title));const text=element("div");CorpusMarkdown.render(text,guideline.text);root.append(text);
+  }
+  if(!root.childNodes.length)root.append(element("p","No study instructions have been published yet."));
+  $("#instructions-dialog").showModal();
+};
 $("#open-book").onclick = () => {
   $("#book-yaml").value = state.yaml;
   $("#book-status").textContent = "";

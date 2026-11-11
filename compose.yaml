@@ -33,9 +33,10 @@ services:
       SMTP_STARTTLS: ${SMTP_STARTTLS:-1}
       SMTP_TLS: ${SMTP_TLS:-0}
       MAIL_FROM: ${MAIL_FROM:-no-reply@localhost}
-      CASE_SUBMISSION_EMAIL_TO: ${CASE_SUBMISSION_EMAIL_TO:-}
-    volumes:
-    - ${RESEARCH_DIR:-./research}:/research:ro
+      AUTHELIA_AUTH_ENABLED: ${AUTHELIA_AUTH_ENABLED:-1}
+      AUTHELIA_ADMIN_GROUP: ${AUTHELIA_ADMIN_GROUP:-coding-admins}
+      AUTHELIA_PROXY_SECRET: ${AUTHELIA_PROXY_SECRET:?Set AUTHELIA_PROXY_SECRET}
+      AUTHELIA_TRUSTED_PROXIES: ${AUTHELIA_TRUSTED_PROXIES:?Set AUTHELIA_TRUSTED_PROXIES}
     depends_on:
       db:
         condition: service_healthy

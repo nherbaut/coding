@@ -1,3 +1,5 @@
+from .test_support import new_study
+from .studies import publish_codebook
 import datetime
 import smtplib
 import uuid
@@ -20,11 +22,15 @@ from .services import Conflict, create_session, submit
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
 )
 class SubmissionEmailTests(TestCase):
+
     def setUp(self):
-        SharedCodebook.objects.create(content={"version": 1, "codes": []})
-        case = Case.objects.create(key="mail", name="Review case")
-        put_document("mail-doc", "Policy", "Review before merging", {}, [case])
-        self.session, _ = create_session("Coder", [case])
+        self.study = new_study()
+        publish_codebook(self.study, book={"version": 1, "codes": []})
+        case = Case.objects.create(key="mail", name="Review case", study=self.study)
+        put_document(
+            self.study, "mail-doc", "Policy", "Review before merging", {}, [case]
+        )
+        self.session, _ = create_session(self.study, "Coder", [case])
         self.assignment = Assignment.objects.get(session=self.session)
 
     def test_submission_queues_one_message_and_worker_delivers_it(self):
@@ -43,7 +49,7 @@ class SubmissionEmailTests(TestCase):
         self.assertEqual(message.to, ["admin@example.org"])
         self.assertIn("Coder", message.body)
         self.assertIn(
-            "https://coding.example.org/review/" + str(submission.pk) + "/",
+            f"https://coding.example.org/admin/studies/{self.study.pk}/reviews/{submission.pk}/",
             message.body,
         )
         self.assertNotIn("/access/#", message.body)

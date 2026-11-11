@@ -1,192 +1,142 @@
 # Collaborative corpus coding
 
-The Raspberry Pi deployment with Traefik, Authelia and an existing PostgreSQL service is documented in [deploy/README.md](deploy/README.md).
+Self-hosted Django/PostgreSQL application for text coding, shared codebooks and reproducible coding reports. Administrators authenticate through Authelia using the LDAP group `coding-admins`. Coders enter through private links.
 
-Django serves the admin dashboard and the independent coder workspaces. PostgreSQL stores corpus versions, personal codebooks, annotations, immutable submissions, and merge decisions. Codebook YAML files are available through import/export. The database is the live application store.
+## Roles and study access
 
-## Deployment
+- **Owner**: the admin who creates a study. Owners can invite and revoke other study admins.
+- **Admin**: any authenticated member of `coding-admins`. They can create studies, and manage studies they own or have accepted an invitation to administer.
+- **Coder**: a private-link session within one study. Coders see only assigned cases, their annotations and their personal codebook.
 
-Run commands from `~/workspace/coding`. Create a `.env` file with unique values. Set `RESEARCH_DIR` to the absolute path of the research repository for the initial QualCoder import. Generate secrets with `python3 -c 'import secrets; print(secrets.token_urlsafe(48))'`.
+LDAP group membership does not grant access to every study. Study access is checked on each administrator request. Invitations name the LDAP username; the invitee must sign in through Authelia and explicitly accept on **My studies**. Optional invitation email contains a sign-in link, not an authentication token. Only owners can grant or revoke study admin rights. Revoking membership removes access on the next request. Losing the LDAP group blocks application admin access independently of study membership.
 
-```dotenv
-RESEARCH_DIR=/path/to/oss-ai-policies-sustainability
-DJANGO_SECRET_KEY=replace-with-generated-secret
-POSTGRES_PASSWORD=replace-with-another-generated-secret
-ALLOWED_HOSTS=coding.example.org
-CSRF_TRUSTED_ORIGINS=https://coding.example.org
-```
+Each study contains one shared codebook with published revisions, cases and immutable text versions, research questions, coding guidelines, coder sessions, submissions, reviews, reports and archives. Case/document keys are unique within their study. Texts may belong to several cases in that study. Cross-study assignments, corpus links and revisions are rejected.
 
-```sh
-make web-up
-make web-migrate
-make web-admin
-make web-import
-```
+## Study workflow
 
-Put an HTTPS reverse proxy in front of `127.0.0.1:8000`. Preserve the Host header and set `X-Forwarded-Proto: https`. Trust that header only from your proxy. The Compose port binds to loopback. Production cookies require HTTPS. Disable proxy request-body logging and redact private-link notification responses. Gunicorn access logging is disabled. The private token travels in a URL fragment and a POST body, then is replaced with an HttpOnly cookie. Treat the private URL as a credential. Revoking or rotating it also invalidates existing coder cookies on their next request.
+1. Sign in and create a study on **My studies**.
+2. Add research questions and coding guidelines in **Questions and guidelines**. Both have explicit ordering, and guidelines can be associated with questions. Saving publishes a combined instructions revision.
+3. Create cases and add UTF-8 text/Markdown files or pasted text in **Cases and texts**, or import a corpus ZIP from the study overview.
+4. Import a YAML codebook in the study overview. Code memos, structured references and researcher rationale remain separate.
+5. Create coder sessions and assign cases. An optional coder email queues a private link and the case list. Cases and case selectors are alphabetical, ignoring capitalization.
+6. Configure this study's submission-notification email recipients in **Settings and admins**. There is no global recipient list.
+7. Owners can invite other admins by LDAP username from the same settings page, with optional email delivery.
 
-Visit `/admin/login/`, then `/` for the research dashboard. Create a coder session and select its cases. Copy the private URL displayed once and deliver it to that coder. Link rotation generates a replacement. Multiple coder sessions can receive the same case. Later assignment additions share the session’s personal codebook. Corpus versions are pinned when a case is assigned.
+A coder starts with the current shared codebook and current instructions. They can inspect the questions and guidelines in the coding screen, develop their personal codebook, select passages, apply multiple codes, and add/edit annotation memos. Overlapping annotations are supported. Markdown and safe embedded HTML are rendered with source-mapped UTF-16 positions; the Reading view control exposes canonical source text. Hashes and source text are not rewritten to render documents.
 
-The coding screen uses canonical plain text. Select a passage, choose one or more codes, optionally enter a memo, and save. Overlapping passages are supported. Saves display confirmation and reject stale edits from other tabs. Code changes have the same revision protection. The concept editor supports memo, rationale, parent, archive flag and a reference to the selected corpus passage. YAML editing exposes the full metadata. Referenced concepts must be archived instead of deleted.
+Submitting locks the case and captures annotations, personal codebook, source document versions and instructions used. Coders can unsubmit to edit again. Admins can explicitly update instructions for an existing coder session; previous submissions remain immutable. Updating instructions does not synchronize codebooks automatically.
 
-Submit each case when done. Submission freezes its annotations, document provenance and codebook. The admin can reopen the assignment, producing a new submission on the next completion. Codebook edits made after submission affect the personal workspace while earlier submission snapshots remain fixed.
+Study admins review codebook proposals using the session base, submitted personal book and current shared book. Accept, reject or map changes individually, or use **Accept all proposals** before applying decisions. Merges affect only this study and keep original annotation identities and mappings. Referenced concepts must be archived rather than deleted.
 
-Review a submission from the dashboard. Each proposed addition, edit, move or deletion requires a decision. Concurrent shared edits are identified. Accept the incoming version, keep the shared version, or map a proposal to a shared concept. Hierarchy errors and duplicate sibling names block publication atomically. An already reviewed submission cannot be applied twice. The export includes original concepts and the mapping accepted for that submission. Personal sessions retain their starting shared version throughout their lifetime.
+## Corpus ZIP and YAML
 
-## Imports and exports
-
-Close QualCoder before the initial import. `make web-import` reads the existing QualCoder database through SQLite read-only mode and imports text documents, case membership, metadata, code hierarchy and memos. Existing annotations are omitted. It reuses code UUIDs from the registry when present. Taxonomy source metadata is retained in imported concept provenance. It creates the initial shared book only when none exists. Repeating corpus import reuses matching document hashes and IDs. Updated text creates a new immutable version. Existing assignments retain their pinned versions.
-
-The admin can upload a corpus ZIP containing `manifest.yaml` and UTF-8 text files. Files are read directly from the archive, without extraction. The uncompressed archive limit is 100 MB.
+Corpus ZIP files contain UTF-8 text files and `manifest.yaml`:
 
 ```yaml
 version: 1
 cases:
-  - id: project-one
-    name: Project one
-    metadata:
-      repository: https://example.org/project-one
+  - id: project-a
+    name: Project A
+    metadata: {repository: 'https://example.org/a'}
 documents:
-  - id: project-one-policy
-    name: AI policy
-    path: texts/policy.txt
-    cases: [project-one]
-    metadata:
-      source_path: AI_POLICY.md
+  - id: project-a-policy
+    name: AI_POLICY.md
+    path: texts/policy.md
+    cases: [project-a]
+    metadata: {source: 'https://example.org/a/AI_POLICY.md'}
 ```
 
-A codebook import/export uses the following structure. Keep UUIDs stable during edits. The parent may be a code or a category. A category is a grouping and cannot be applied directly to a passage. Sibling names are unique, with Unicode case-insensitive comparison. Unknown metadata fields survive YAML import/export. Published shared YAML revisions retain existing identities, allowing archival. Coder changes are reviewed through the three-way merge screen.
+Imports always target an explicit study. Reusing the same manifest identifiers in another study creates independent data. Importing a changed text creates a new immutable document version; existing assignments keep their pinned versions. The importer enforces a 100 MB uncompressed limit and reads files without extracting them to the filesystem.
 
-```yaml
-version: 1
-codes:
-  - id: 14f28a65-1138-4389-a581-55db25aa146a
-    kind: code
-    name: Review capacity
-    parent: null
-    memo: '"Verified quotation" (source, exact location).'
-    rationale: Research interpretation belongs here.
-    archived: false
-    references:
-      - type: bibliography
-        key: becker2015sustainability
-        location: page 468
+Codebooks use YAML schema version 1 with UUID concepts, `kind` (`code` or `category`), `parent`, `name`, `memo`, `references`, `rationale`, `archived` and optional `color` (`#RRGGBB`). Export an existing study or personal codebook to inspect the complete format. Imported provenance metadata is retained. Corpus references must match a document/hash/passage in the target study.
+
+CLI corpus import:
+
+```sh
+python manage.py import_corpus corpus.zip --study STUDY_UUID
+make web-import STUDY=STUDY_UUID CORPUS=/path/to/corpus.zip
 ```
 
-Corpus references use `type: corpus`, `document` (the application's document-version integer ID), `hash` (SHA-256 of UTF-8 text), UTF-16 `start`/`end`, and `quote`. The server checks quoted content against assigned document versions. Follow AGENTS.md when refining codebook content. Existing literature memos are preserved verbatim by the initial importer.
+The study UUID is visible in the study URL. The application has no global corpus/codebook bootstrap or QualCoder importer. Original research files remain in the separate research repository.
 
-Download shared or personal codebooks as YAML. Submission review provides JSON and CSV results with coder, case, document identity/hash, selected text, UTF-16 offsets, code definitions, memos, submission time and accepted shared mappings. JSON also contains metadata and the complete submitted book. CSV encodes list fields as JSON strings.
+## Reports and retained records
+
+**Reports** provides codebook evidence (source memos, references, rationale, excerpts and counts) and side-by-side document comparisons. The default uses the latest available submission per coder/case; **Current work** explicitly includes drafts. Different document versions are flagged and never aligned by offsets. Matching versions support synchronized scrolling and passage comparisons at selection boundaries. These compare code identities, not statistical agreement.
+
+One annotation is one coded passage per coder session. Multiple codes on a passage do not multiply category totals. Counts distinguish direct coding and descendant rollups, distinct documents, document versions, cases and coder sessions. Original identities and accepted shared mappings are separate views. Identical names alone never merge concepts.
+
+Saved reports capture study identity, the current questions/guidelines, each coder's actual instructions, codebooks, texts/hashes, coding, mappings and filters. Subsequent changes cannot modify them. Exports include standalone HTML (with inline Markdown renderer), excerpts CSV, counts CSV, full-provenance JSON and browser Print/PDF. CSV formula prefixes are escaped; JSON retains source text exactly.
+
+**Delete coder session**, **Remove assignment** and **Delete submitted case** remove active access or review entries while retaining research records in the study's **Archive**. A latest withdrawn submission reopens its case. Removing an older submission does not unlock a newer one. Reassigning a removed case restores its coding and pinned versions. A withdrawal cannot be merged and does not undo previously accepted shared-codebook changes. Existing saved reports never change.
+
+## Deployment and authentication
+
+Docker images run on amd64/arm64 with Python only; the browser bundle is checked in. Configure PostgreSQL, a persistent database volume, HTTPS, Authelia and the trusted proxy headers before starting the deployed app. Administrator paths are `/` and `/admin/*`; private coder paths are `/access/*`, `/work/*` and `/api/*`. Static files and `/healthz/` do not require admin authentication.
+
+Set these through a protected environment file, not Git:
+
+- `DEBUG=0`, `DJANGO_SECRET_KEY`, `PUBLIC_BASE_URL`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`.
+- `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`.
+- `AUTHELIA_AUTH_ENABLED=1`, `AUTHELIA_ADMIN_GROUP=coding-admins`, `AUTHELIA_PROXY_SECRET` (at least 32 characters), `AUTHELIA_TRUSTED_PROXIES` (proxy IP/CIDR list).
+
+The proxy must authenticate admins and supply `Remote-User`, `Remote-Groups`, optional `Remote-Email`, and `X-Coding-Proxy-Secret`. Strip/rewrite incoming identity headers. The app checks the actual connecting proxy address and secret on every admin request. Deployed admin access requires Authelia; Django password cookies cannot bypass it. LDAP identity is normalized to a case-insensitive username. User/email records are refreshed from trusted Authelia headers.
+
+```sh
+make web-up
+make web-migrate
+```
+
+Run migrations before starting the app. The mailer uses the same environment/image and waits for app health. Store TLS/proxy configuration outside the application repository. `deploy/` contains infrastructure templates; keep secrets out of those templates.
+
+This is a pre-production schema replacement. Existing application test data is disposable: recreate the dedicated application database/schema and initialize the current baseline migration. There are no data-conversion migrations, default studies, old global routes, or compatibility imports. LDAP and source research files are not reset.
+
+## Transactional email
+
+Set `CASE_EMAIL_ENABLED=1`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_STARTTLS=1` or `SMTP_TLS=1`, and `MAIL_FROM`. Credentials and a stable `DJANGO_SECRET_KEY` belong in the protected environment. Choose one TLS mode. Configure submission recipients per study in the application.
+
+Coder invitations and admin invitations are queued by explicit administrator actions. Submission notices include study, coder, case and a study-scoped review link. The durable queue uses leases and retry backoff. SMTP failure does not roll back a submission. Pending private-link email bodies are encrypted and cleared after delivery; replacing/revoking a link cancels old invitations. Withdrawing submissions cancels unsent notices. Admin invitation delivery is canceled when an invitation is accepted or revoked. Worker:
+
+```sh
+python manage.py deliver_notifications --watch
+```
 
 ## Backup and restore
 
-```sh
-make web-backup WEB_BACKUP=backup.sql
-# Stop web writes during restore. Restore into an empty database.
-docker compose stop web
-docker compose exec -T db dropdb -U coding coding
-docker compose exec -T db createdb -U coding coding
-docker compose exec -T db psql -v ON_ERROR_STOP=1 -U coding coding < backup.sql
-docker compose start web
-```
-
-Back up `.env` separately in secure storage. Database dumps contain corpus text, annotations and token hashes. Retain them according to the research data policy. The repository mount in the application is read-only. Uploaded corpus text is stored in the database, so the dump includes it.
-
-## Local development and tests
+A complete PostgreSQL dump includes studies, membership/invitations, instructions/codebook revisions, source text, coding, saved reports and email queues. Keep SMTP secrets and `DJANGO_SECRET_KEY` separately in protected configuration.
 
 ```sh
-python3 -m venv .venv-web
-.venv-web/bin/pip install -r requirements.txt
-.venv-web/bin/python manage.py migrate
-.venv-web/bin/python manage.py createsuperuser
-.venv-web/bin/python manage.py runserver
-.venv-web/bin/python manage.py test corpus
+make web-backup WEB_BACKUP=/secure/path/coding.sql
+# Stop app and mailer, restore into an empty dedicated database:
+docker compose exec -T db psql -v ON_ERROR_STOP=1 -U coding coding < /secure/path/coding.sql
+# Restart app and mailer after restore.
 ```
 
-Development defaults to SQLite and HTTP cookies on localhost. Production uses the PostgreSQL service with row-level transaction locks. All annotation writes lock the coder session and assignment, validate document content, and compare revisions. The API uses same-origin CSRF protection. Corpus text, memo text and metadata are rendered as text, preventing embedded corpus HTML from executing.
+## Development and verification
 
-For the optional real-browser check, install `requirements-test.txt`, run `python -m playwright install chromium`, then `python manage.py test corpus.browser_tests`. To use an installed Chrome instead, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome`. This check creates a temporary database and exercises private-link access, code creation with corpus evidence, passage coding, memo autosave, submission and admin merge. PostgreSQL tests also exercise simultaneous writes when `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_DB` and `POSTGRES_PASSWORD` point to a disposable database server whose user can create test databases.
-
-## Code colors
-
-Selectable taxonomy terms have a stable default color derived from their UUID. The concept editor includes a Highlight color picker, and YAML supports an optional `color: '#RRGGBB'` field. Code lists show matching swatches. Coded passages and annotation labels use a readable tint of the selected color. Overlapping passages show horizontal bands for all assigned code colors, with code names on hover. Submitted review pages use the submission's frozen codebook colors. Existing codebooks display colors immediately, and YAML downloads include the effective colors.
-
-## Submission email notifications
-
-Set `CASE_EMAIL_ENABLED=1`, `PUBLIC_BASE_URL`, `CASE_SUBMISSION_EMAIL_TO` (comma-separated administrator addresses), `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, and `MAIL_FROM` in the protected environment. Use `SMTP_STARTTLS=1` and `SMTP_TLS=0` for STARTTLS, or the reverse for implicit TLS. Keep credentials outside Git.
-
-Submitting a case stores an email in the same database transaction as its immutable submission. The separate mailer service sends the notification with coder, case, submission time, counts and an authenticated review link. Delivery errors retain the queued notification and retry with increasing delays up to one hour. The dashboard shows Queued, Retrying or Sent. Sent means that SMTP accepted the message. Code excerpts and private coder links are excluded from the email.
-
-The Compose stack includes the mailer worker. For a manual delivery pass, run `python manage.py deliver_notifications`; use `--watch` for continuous delivery. Disabling `CASE_EMAIL_ENABLED` pauses delivery and creation of new notifications. Existing pending messages remain stored. Notifications are created for new submissions after email is enabled, including resubmissions after an admin reopens a case. They are not generated retrospectively for existing submissions. A stable Message-ID is retained across retries, though an interrupted SMTP acknowledgement can still produce a duplicate delivery.
-
-## Email coder invitations
-
-Enter the optional coder email when creating a session to queue an invitation containing its private link and alphabetically ordered list of cases awaiting coding. Sessions created without an email retain the manual-link workflow.
-
-For an existing session, enter or update its email and click **Generate and email new link**. This replaces the previous private URL and invalidates existing browser sessions using that URL. Coding, codebook edits and assignments stay attached to the same session. The invitation includes its currently unfinished cases. Adding cases later can be followed by sending another invitation.
-
-Invitations use the same SMTP settings and retry worker as case-submission notifications. Pending invitation bodies are encrypted using a key derived from `DJANGO_SECRET_KEY`, and cleared after SMTP accepts them. Revoking or replacing a link cancels its pending invitations. The session card shows the latest invitation delivery status. Keep `DJANGO_SECRET_KEY` stable while invitations are pending. If that key changes, generate a new invitation for pending messages.
-
-## Coding reports and coder comparison
-
-Administrators can open **Coding reports** from the dashboard, or **Compare coding** from a submission review. Reports use the latest available submission for each coding session and case by default. Repeated submissions are not counted twice. Choose **Current work (including drafts)** explicitly to inspect live coding instead.
-
-**Document comparison** shows two coders' original texts, color highlights, codes and annotation memos side by side. Select the case, coders and document, then click **Compare**. Clicking a highlight opens its evidence card; **Locate passage** returns to its text. Matching document versions support synchronized scrolling and a passage table split at selection boundaries, including partial overlaps and passages coded by only one coder. Different versions are labelled and are never aligned by their offsets. The table compares code identities; it does not calculate inter-coder agreement or infer equivalent concepts from their names.
-
-**Codebook evidence** lists codes and categories with supporting excerpts, source memos, references and separate researcher rationale. Filter by case, coding session, document and code/category. Each passage retains the coder, case, document version/hash, selected source text, UTF-16 offsets, memo and submission provenance. Personal definitions that differ across sessions remain inspectable.
-
-Counts use one annotation per coding session as one coded passage. Overlapping annotations remain separate. Documents and cases are distinct source identities; document-version counts are available separately. Coder counts are distinct coding sessions, including separate sessions with the same display name. Direct counts exclude descendants. Category/parent rollups include descendant codes but count an annotation only once, even if it carries multiple descendant codes. Zero-count concepts remain in the table.
-
-**Original coder codes** aggregate permanent code UUIDs and preserve each coder's own names, hierarchy and definitions on their evidence. Same-name codes with different identities remain separate. **Accepted shared concepts** uses recorded review mappings and existing shared identities with the captured shared hierarchy. Unmapped proposals remain explicitly separate; mappings from older submissions are never applied to live drafts.
-
-Use **Save report snapshot** to capture a named, immutable report. The saved payload includes the selected coding versions, personal codebooks, document texts and metadata, shared codebook revision, mappings, scope and capture time. Subsequent coding, imports or shared-codebook reviews do not modify a saved report. Saved reports are listed at the bottom of the report page and are included in normal PostgreSQL backups. The JSON `schema_version` describes the report payload format.
-
-Reports export as a standalone **HTML** document with embedded styles, **Excerpts CSV**, **Counts CSV**, and full-provenance **JSON**. **Print / PDF** uses the browser's print dialog. CSV values that look like spreadsheet formulas are escaped for safe opening; JSON preserves the original text. Generate and save the report before final analysis to freeze its inputs. Exports contain research data and are protected by the same administrator authentication as submission reviews.
-
-For the optional report browser check:
+For local development only, use `DEBUG=1`, `AUTHELIA_AUTH_ENABLED=0` and SQLite, or a disposable PostgreSQL database. Password-authenticated local staff accounts are for development/testing; deployed users use Authelia.
 
 ```sh
-PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome python manage.py test corpus.browser_reporting_tests
+python -m venv .venv
+.venv/bin/pip install -r requirements-test.txt
+.venv/bin/python manage.py migrate
+.venv/bin/python manage.py createsuperuser
+.venv/bin/python manage.py runserver
+make web-test PYTHON=.venv/bin/python
 ```
 
-## Removing sessions, assignments and submissions
-
-The administrator dashboard provides three actions, each with a confirmation dialog:
-
-- **Delete coder session** revokes the private link and existing workspace cookies, cancels queued invitations, and removes the session and its assignments from the active dashboard.
-- **Remove assignment** hides one case from its coder while leaving other assigned cases accessible. To restore it, add that case again under the coder session; its document versions, annotations and submitted status are preserved.
-- **Delete submitted case** withdraws that particular submission from the review queue. If it is the latest submission for its assignment, the case reopens for editing and resubmission. Removing an older submission does not unlock a newer one.
-
-These actions retain coding records. Open **Archived coding** in the dashboard navigation to inspect deleted sessions, removed assignments and withdrawn submissions, open retained coding in reports, or export archived submissions. Archived sessions and assignments remain available in coding reports and are labelled there. Withdrawn submissions are excluded from the latest-submissions report; their immutable snapshots remain available in the archive. Existing saved reports never change.
-
-Coders can also use **Unsubmit case** on a submitted case to reopen it themselves. Ownership and browser-tab revision checks still apply. Withdrawing a previously reviewed submission retains its review audit and does not undo already accepted shared-codebook changes. Pending submission emails are canceled when a submission is withdrawn; previously sent email history remains.
-
-Deletion/removal is enforced again under database locks when saving, submitting, issuing links and assigning cases, so a stale tab cannot resume a deleted session or modify a removed assignment. Existing corpus references in a personal codebook remain intact when their assignment is removed; adding new evidence from that removed assignment is prohibited.
-
-Optional browser check:
+Backend checks cover study isolation, invitations/ownership, group removal, cross-study identifiers/relationships, protocol snapshots, imports, merges, reports, private-link isolation, Unicode offsets, concurrency and removal. PostgreSQL concurrency tests require a disposable DB user with permission to create test databases. Browser checks:
 
 ```sh
-PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome python manage.py test corpus.browser_removal_tests
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome python manage.py test \
+  corpus.browser_study_tests corpus.browser_tests corpus.browser_markdown_tests \
+  corpus.browser_reporting_tests corpus.browser_removal_tests
 ```
 
-## Markdown reading and coding
-
-Markdown documents open as **Rendered text** in the coder workspace, submission review and report document viewers. Headings, emphasis, lists, links, tables, blockquotes, code blocks and safe embedded HTML are formatted. Documents are recognized by their Markdown filename/source metadata or by Markdown structure in the content. Plain text stays plain. **Reading view → Source text** shows the canonical source whenever needed. Image descriptions remain selectable text; rendering does not fetch remote images.
-
-Passage positions and document hashes refer to the original immutable source. The browser renderer maps visible UTF-16 text positions back to that source, including formatting delimiters, escapes, entities, emoji and list/blockquote prefixes. Selecting across formatting can therefore produce an exported source excerpt containing Markdown syntax, while the reading screen displays its visible text. Source text, hashes and stored annotations are never rewritten to render a document. Embedded HTML is rebuilt from an allowlist of elements; scripts, event handlers and unsafe links are excluded.
-
-Downloaded HTML reports include the renderer and styles so formatted document comparisons work offline. CSV and JSON retain the original source text and source offsets for reproducibility.
-
-The browser bundle and third-party license notices are committed under `corpus/static/corpus/`. Docker deployment needs no Node installation. To change and rebuild the renderer, use Node 22 or newer:
+Markdown renderer sources are in `frontend/`. Rebuild its pinned bundle and third-party notices with Node 22+:
 
 ```sh
 cd frontend
 npm ci
 npm test
 npm run build
-```
-
-The lockfile pins parser/build dependencies. `frontend/build.mjs` generates `markdown.js` and `markdown.LICENSE.txt`. The optional browser regression checks formatted passage selection, overlapping highlights, Unicode/entities, source switching, sanitized HTML, review views and offline reports:
-
-```sh
-PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome python manage.py test corpus.browser_markdown_tests
 ```

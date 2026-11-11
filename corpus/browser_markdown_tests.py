@@ -1,24 +1,27 @@
-"""Browser selection and source-provenance checks for rendered Markdown."""
+from .test_support import new_study
+from .studies import publish_codebook
 
+"""Browser selection and source-provenance checks for rendered Markdown."""
 import os
 import uuid
 from pathlib import Path
-
 from django.contrib.auth import get_user_model
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
-
 from .importers import put_document
 from .models import Case, SharedCodebook
 from .services import create_session
 
 
 class MarkdownBrowserTests(StaticLiveServerTestCase):
+
     def test_formatted_coding_unicode_source_toggle_review_and_portable_report(self):
+        self.study = new_study()
         from playwright.sync_api import sync_playwright
 
         code = str(uuid.uuid4())
-        SharedCodebook.objects.create(
-            content=dict(
+        publish_codebook(
+            self.study,
+            book=dict(
                 version=1,
                 codes=[
                     dict(
@@ -30,36 +33,19 @@ class MarkdownBrowserTests(StaticLiveServerTestCase):
                         color="#f08080",
                     )
                 ],
-            )
+            ),
         )
-        case = Case.objects.create(key="markdown", name="Markdown project")
-        source = """# Sustainability policy
-
-Contributors **must review 😀** and [disclose use](https://example.org/policy) &amp; keep \\*context\\*.
-
-- First requirement
-- Second requirement
-
-> Human review
-> remains necessary.
-
-| Rule | Required |
-| --- | --- |
-| Review | Yes |
-
-```js
-const count = 1;
-```
-
-<div><h2>HTML section</h2><p>Safe <strong>HTML</strong> &amp; text.</p><script>window.markdownAttack=true</script><img src=x onerror="window.markdownAttack=true"></div>
-
-[Unsafe](javascript:alert(1))
-"""
-        document = put_document("markdown", "POLICY.md", source, {}, [case])
-        _, link = create_session("Markdown coder", [case])
+        case = Case.objects.create(
+            key="markdown", name="Markdown project", study=self.study
+        )
+        source = '# Sustainability policy\n\nContributors **must review 😀** and [disclose use](https://example.org/policy) &amp; keep \\*context\\*.\n\n- First requirement\n- Second requirement\n\n> Human review\n> remains necessary.\n\n| Rule | Required |\n| --- | --- |\n| Review | Yes |\n\n```js\nconst count = 1;\n```\n\n<div><h2>HTML section</h2><p>Safe <strong>HTML</strong> &amp; text.</p><script>window.markdownAttack=true</script><img src=x onerror="window.markdownAttack=true"></div>\n\n[Unsafe](javascript:alert(1))\n'
+        document = put_document(self.study, "markdown", "POLICY.md", source, {}, [case])
+        _, link = create_session(self.study, "Markdown coder", [case])
         get_user_model().objects.create_superuser(
             "markdown-admin", "admin@example.org", "test-password"
         )
+        self.study.owner = get_user_model().objects.get(username="markdown-admin")
+        self.study.save(update_fields=["owner"])
         with sync_playwright() as playwright:
             options = {"headless": True}
             if os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE"):
@@ -101,7 +87,7 @@ const count = 1;
                 ][0]["annotations"]
 
             saved = save_selection(
-                """root=>{const node=root.querySelector('strong').firstChild;const selection=window.getSelection();selection.setBaseAndExtent(node,0,node,node.length);root.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));}"""
+                "root=>{const node=root.querySelector('strong').firstChild;const selection=window.getSelection();selection.setBaseAndExtent(node,0,node,node.length);root.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));}"
             )
             self.assertEqual(saved[0]["selected_text"], "must review 😀")
             self.assertEqual(
@@ -110,17 +96,17 @@ const count = 1;
             )
             self.assertEqual(saved[0]["document_hash"], document.sha256)
             saved = save_selection(
-                """root=>{const first=root.querySelector('strong mark').firstChild,last=root.querySelector('a').firstChild;window.getSelection().setBaseAndExtent(first,0,last,8);root.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));}"""
+                "root=>{const first=root.querySelector('strong mark').firstChild,last=root.querySelector('a').firstChild;window.getSelection().setBaseAndExtent(first,0,last,8);root.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));}"
             )
             self.assertEqual(len(saved), 2)
             self.assertTrue(
-                any("** and [disclose" in a["selected_text"] for a in saved)
+                any(("** and [disclose" in a["selected_text"] for a in saved))
             )
             self.assertNotIn("**", coder.locator("#annotations").inner_text())
             saved = save_selection(
-                """root=>{const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node;while(node=walker.nextNode()){if(node.textContent.includes(' & keep'))break;}const start=node.textContent.indexOf('&');window.getSelection().setBaseAndExtent(node,start,node,start+1);root.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));}"""
+                "root=>{const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node;while(node=walker.nextNode()){if(node.textContent.includes(' & keep'))break;}const start=node.textContent.indexOf('&');window.getSelection().setBaseAndExtent(node,start,node,start+1);root.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));}"
             )
-            self.assertTrue(any(a["selected_text"] == "&amp;" for a in saved))
+            self.assertTrue(any((a["selected_text"] == "&amp;" for a in saved)))
             coder.get_by_label("Reading view", exact=True).select_option("source")
             self.assertIn(
                 "# Sustainability policy", coder.locator("#document").inner_text()
@@ -144,7 +130,10 @@ const count = 1;
             coder.get_by_role("button", name="Unsubmit case", exact=True).wait_for()
             admin = browser.new_page()
             admin.on("pageerror", lambda error: errors.append(str(error)))
-            admin.goto(self.live_server_url + "/admin/login/?next=/")
+            admin.goto(
+                self.live_server_url
+                + ("/admin/login/?next=" + f"/admin/studies/{self.study.pk}/")
+            )
             admin.get_by_label("Username:").fill("markdown-admin")
             admin.get_by_label("Password:").fill("test-password")
             admin.get_by_role("button", name="Log in", exact=True).click()
@@ -154,7 +143,10 @@ const count = 1;
             self.assertNotIn(
                 "**", admin.locator("article.annotation").all_text_contents()[1]
             )
-            admin.goto(self.live_server_url + "/review/reports/?view=compare")
+            admin.goto(
+                self.live_server_url
+                + f"/admin/studies/{self.study.pk}/reports/?view=compare"
+            )
             admin.locator(".comparison-text h1").wait_for()
             self.assertGreater(admin.locator(".comparison-text mark").count(), 0)
             with admin.expect_download() as info:

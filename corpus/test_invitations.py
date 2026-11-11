@@ -1,3 +1,5 @@
+from .test_support import new_study
+from .studies import publish_codebook
 import hashlib
 import re
 import smtplib
@@ -18,18 +20,26 @@ from .notifications import deliver_next_email
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
 )
 class InvitationEmailTests(TestCase):
+
     def setUp(self):
-        SharedCodebook.objects.create(content={"version": 1, "codes": []})
-        self.beta = Case.objects.create(key="beta", name="Beta project")
-        self.alpha = Case.objects.create(key="alpha", name="Alpha project")
+        self.study = new_study()
+        publish_codebook(self.study, book={"version": 1, "codes": []})
+        self.beta = Case.objects.create(
+            key="beta", name="Beta project", study=self.study
+        )
+        self.alpha = Case.objects.create(
+            key="alpha", name="Alpha project", study=self.study
+        )
         self.admin = get_user_model().objects.create_superuser(
             "admin", "admin@example.org", "password"
         )
+        self.study.owner = self.admin
+        self.study.save(update_fields=["owner"])
         self.client.force_login(self.admin)
 
     def create(self, email="coder@example.org"):
         response = self.client.post(
-            "/",
+            f"/admin/studies/{self.study.pk}/",
             {
                 "action": "create",
                 "coder": "Coder",
@@ -42,8 +52,8 @@ class InvitationEmailTests(TestCase):
 
     def body_and_token(self, job):
         body = invitation_cipher().decrypt(job.body.encode()).decode()
-        token = re.search(r"/access/#([^\s]+)", body).group(1)
-        return body, token
+        token = re.search("/access/#([^\\s]+)", body).group(1)
+        return (body, token)
 
     def test_creation_queues_private_link_and_sorted_cases(self):
         session = self.create()
@@ -75,7 +85,7 @@ class InvitationEmailTests(TestCase):
         old = InvitationEmail.objects.get()
         _, old_token = self.body_and_token(old)
         response = self.client.post(
-            "/",
+            f"/admin/studies/{self.study.pk}/",
             {
                 "action": "send_invitation",
                 "session": session.pk,
@@ -107,7 +117,10 @@ class InvitationEmailTests(TestCase):
 
     def test_revocation_cancels_queued_delivery(self):
         session = self.create()
-        self.client.post("/", {"action": "revoke", "session": session.pk})
+        self.client.post(
+            f"/admin/studies/{self.study.pk}/",
+            {"action": "revoke", "session": session.pk},
+        )
         job = InvitationEmail.objects.get()
         self.assertEqual(job.status, "Cancelled")
         self.assertEqual(job.body, "")
@@ -137,7 +150,7 @@ class InvitationEmailTests(TestCase):
         session = self.create()
         before = session.token_hash
         response = self.client.post(
-            "/",
+            f"/admin/studies/{self.study.pk}/",
             {"action": "send_invitation", "session": session.pk, "email": "invalid"},
         )
         self.assertEqual(response.status_code, 400)
@@ -148,7 +161,7 @@ class InvitationEmailTests(TestCase):
     @override_settings(CASE_EMAIL_ENABLED=False)
     def test_disabled_mail_rolls_back_creation_with_email(self):
         response = self.client.post(
-            "/",
+            f"/admin/studies/{self.study.pk}/",
             {
                 "action": "create",
                 "coder": "Coder",

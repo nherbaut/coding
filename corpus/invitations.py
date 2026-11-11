@@ -46,7 +46,7 @@ def _queue_invitation_email(session, link):
     if not case_list:
         case_list = "No cases are currently awaiting coding."
     body = (
-        f"Hello {session.coder},\n\nYour coding session is ready.\n\n"
+        f"Hello {session.coder},\n\nYour coding session for {session.study.title} is ready.\n\n"
         f'Open your private workspace:\n{settings.PUBLIC_BASE_URL.rstrip("/")}{link}\n\n'
         f"Cases to code:\n{case_list}\n\n"
         "Keep this link private. Submit each case when you have finished coding it.\n"

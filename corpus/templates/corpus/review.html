@@ -1,6 +1,6 @@
-{% extends 'corpus/base.html' %}{% load static %}{% block navigation %}<a href="{% url 'coding-report' %}?case={{ submission.assignment.case_id }}&amp;view=compare">Compare coding</a><a href="/">Dashboard</a
-><a href="{% url 'results' submission.pk %}">Export JSON</a
-><a href="{% url 'results' submission.pk %}?format=csv">Export CSV</a>{% endblock %}{% block content %}
+{% extends 'corpus/base.html' %}{% load static %}{% block navigation %}<a href="{% url 'coding-report' study.pk %}?case={{ submission.assignment.case_id }}&amp;view=compare">Compare coding</a><a href="{% url 'dashboard' study.pk %}">Study overview</a
+><a href="{% url 'results' study.pk submission.pk %}">Export JSON</a
+><a href="{% url 'results' study.pk submission.pk %}?format=csv">Export CSV</a>{% endblock %}{% block content %}
 <link rel="stylesheet" href="{% static 'corpus/markdown.css' %}">
 <main class="dashboard">
   <h1>{{ snapshot.coder }} · {{ snapshot.case }}</h1>

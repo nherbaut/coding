@@ -17,6 +17,7 @@ from .models import (
     SubmissionWithdrawal,
     SubmissionEmail,
     MergeAudit,
+    Study,
 )
 
 
@@ -147,15 +148,21 @@ def issue_link(session):
 
 
 @transaction.atomic
-def create_session(coder, cases, email=""):
-    book = SharedCodebook.objects.select_for_update().order_by("-pk").first()
+def create_session(study, coder, cases, email=""):
+    study = Study.objects.select_for_update().get(pk=study.pk)
+    book = study.codebook
     if not book:
         raise ValueError("Import a shared codebook first")
     if not isinstance(coder, str) or not coder.strip():
         raise ValueError("Provide a coder name")
     email = CodingSession._meta.get_field("email").clean(email.strip(), None)
     session = CodingSession.objects.create(
-        coder=coder.strip(), email=email, base=book, codebook=deepcopy(book.content)
+        study=study,
+        instructions=study.instructions,
+        coder=coder.strip(),
+        email=email,
+        base=book,
+        codebook=deepcopy(book.content),
     )
     for case in cases:
         assign_case(session, case)
@@ -165,6 +172,8 @@ def create_session(coder, cases, email=""):
 @transaction.atomic
 def assign_case(session, case):
     session = lock_active_session(session.pk)
+    if case.study_id != session.study_id:
+        raise ValueError("Case and coder must belong to the same study")
     assignment, created = Assignment.objects.get_or_create(session=session, case=case)
     if created:
         versions = []
@@ -224,6 +233,11 @@ def submit(assignment_id, session_id, expected):
     if assignment.locked:
         raise Conflict("Case is already submitted")
     snapshot = dict(
+        study=dict(id=str(session.study_id), title=session.study.title),
+        instructions=dict(
+            revision=session.instructions_id,
+            content=deepcopy(session.instructions.content),
+        ),
         coder=session.coder,
         session=str(session.pk),
         case=assignment.case.name,
@@ -345,8 +359,10 @@ def merge_submission(submission_id, admin, revision, decisions):
     if SubmissionWithdrawal.objects.filter(submission=submission).exists():
         raise Conflict("This submission was withdrawn and cannot be merged.")
     # Serialize all shared revisions using the singleton initial revision row.
-    SharedCodebook.objects.select_for_update().order_by("pk").first()
-    shared = SharedCodebook.objects.order_by("-pk").first()
+    study = Study.objects.select_for_update().get(
+        pk=submission.assignment.session.study_id
+    )
+    shared = study.codebook
     if MergeAudit.objects.filter(submission=submission).exists():
         raise Conflict("This submission has already been reviewed")
     if shared.pk != revision:
@@ -359,7 +375,7 @@ def merge_submission(submission_id, admin, revision, decisions):
     accepted = set()
     referenced = {
         code
-        for s in Submission.objects.all()
+        for s in Submission.objects.filter(assignment__session__study=study)
         for a in s.snapshot["annotations"]
         for code in a["codes"]
     }
@@ -367,7 +383,9 @@ def merge_submission(submission_id, admin, revision, decisions):
 
     referenced.update(
         code
-        for codes in Annotation.objects.values_list("codes", flat=True)
+        for codes in Annotation.objects.filter(
+            assignment__session__study=study
+        ).values_list("codes", flat=True)
         for code in codes
     )
     for change in changes:
@@ -409,7 +427,9 @@ def merge_submission(submission_id, admin, revision, decisions):
     result = deepcopy(shared.content)
     result["codes"] = list(entities.values())
     validate_book(result)
-    published = SharedCodebook.objects.create(content=result)
+    from .studies import publish_codebook
+
+    published = publish_codebook(study, result)
     return MergeAudit.objects.create(
         submission=submission,
         admin=admin,

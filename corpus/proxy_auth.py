@@ -17,9 +17,7 @@ class AutheliaAdminMiddleware:
             return self.get_response(request)
         # A Django login cookie alone cannot authorize an administrator in SSO mode.
         request.user = AnonymousUser()
-        admin_path = request.path == "/" or request.path.startswith(
-            ("/admin", "/review", "/exports")
-        )
+        admin_path = request.path == "/" or request.path.startswith("/admin/")
         if not admin_path:
             return self.get_response(request)
         try:
@@ -39,7 +37,7 @@ class AutheliaAdminMiddleware:
             return HttpResponseForbidden(
                 "Administrator access requires the trusted authentication proxy."
             )
-        username = request.META.get("HTTP_REMOTE_USER", "").strip()
+        username = request.META.get("HTTP_REMOTE_USER", "").strip().casefold()
         groups = {
             group.strip()
             for group in request.META.get("HTTP_REMOTE_GROUPS", "").split(",")
@@ -69,5 +67,17 @@ class AutheliaAdminMiddleware:
             user.is_superuser = False
             user.set_unusable_password()
             user.save(update_fields=["is_staff", "is_superuser", "password"])
+        email = request.META.get("HTTP_REMOTE_EMAIL", "").strip()
+        if email:
+            from django.core.validators import validate_email
+            from django.core.exceptions import ValidationError
+
+            try:
+                validate_email(email)
+            except ValidationError:
+                email = ""
+            if email and user.email != email:
+                user.email = email
+                user.save(update_fields=["email"])
         request.user = user
         return self.get_response(request)

@@ -8,13 +8,14 @@ import yaml
 import zipfile
 from django.core.exceptions import ValidationError
 from functools import wraps
-from django.contrib.admin.views.decorators import staff_member_required
+from .permissions import admin_required
 from django.db import transaction
 from django.db.models import Prefetch, Q
 from django.db.models.functions import Lower
 from django.core.validators import validate_email
 from django.http import JsonResponse, HttpResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 from .models import (
     Annotation,
@@ -47,6 +48,7 @@ from .services import (
     validate_book,
 )
 from .importers import import_zip
+from .studies import get_study, publish_codebook, update_session_instructions
 from .invitations import queue_invitation_email
 from .codebook_review import describe_changes, concept_path
 from .colors import code_color, colored_book, highlight_style, highlighted_segments
@@ -109,7 +111,9 @@ def exchange(request):
 
 def workspace(request):
     session = current_session(request)
-    return render(request, "corpus/work.html", {"coder": session.coder})
+    return render(
+        request, "corpus/work.html", {"coder": session.coder, "study": session.study}
+    )
 
 
 def state(request):
@@ -142,6 +146,10 @@ def state(request):
         )
     return JsonResponse(
         dict(
+            study=dict(id=str(session.study_id), title=session.study.title),
+            instructions=dict(
+                revision=session.instructions_id, **session.instructions.content
+            ),
             coder=session.coder,
             revision=session.revision,
             codebook=session.codebook,
@@ -325,17 +333,19 @@ def personal_export(request):
     return yaml_response(current_session(request).codebook, "personal-codebook")
 
 
-@staff_member_required
+@admin_required
 @api_errors
-def dashboard(request):
+def dashboard(request, study_id):
+    study = get_study(request.user, study_id)
     notice = ""
     if request.method == "POST":
         action = request.POST["action"]
         if action == "create":
             with transaction.atomic():
                 session, link = create_session(
+                    study,
                     request.POST["coder"],
-                    Case.objects.filter(pk__in=request.POST.getlist("cases")),
+                    selected_cases(study, request.POST.getlist("cases")),
                     email=request.POST.get("email", ""),
                 )
                 if session.email:
@@ -361,6 +371,7 @@ def dashboard(request):
                 session = get_object_or_404(
                     CodingSession.objects.select_for_update(),
                     pk=request.POST["session"],
+                    study=study,
                     deleted_at__isnull=True,
                 )
                 session.email = email
@@ -369,12 +380,15 @@ def dashboard(request):
                 queue_invitation_email(session, link)
                 notice = "New private link and case list queued for " + email
         elif action in ("delete_session", "delete_invitation"):
-            session = get_object_or_404(CodingSession, pk=request.POST["session"])
+            session = get_object_or_404(
+                CodingSession, study=study, pk=request.POST["session"]
+            )
             delete_coder_session(session.pk)
             notice = "Coder session deleted. Access revoked; coding records retained."
         elif action == "remove_assignment":
             assignment = get_object_or_404(
                 Assignment,
+                session__study=study,
                 pk=request.POST["assignment"],
                 session__deleted_at__isnull=True,
             )
@@ -385,9 +399,10 @@ def dashboard(request):
                 session = get_object_or_404(
                     CodingSession.objects.select_for_update(),
                     pk=request.POST["session"],
+                    study=study,
                     deleted_at__isnull=True,
                 )
-                for case in Case.objects.filter(pk__in=request.POST.getlist("cases")):
+                for case in selected_cases(study, request.POST.getlist("cases")):
                     assign_case(session, case)
                 notice = "Cases assigned. Existing coding is restored when a removed case is reassigned."
         elif action in ("rotate", "revoke"):
@@ -395,6 +410,7 @@ def dashboard(request):
                 session = get_object_or_404(
                     CodingSession.objects.select_for_update(),
                     pk=request.POST["session"],
+                    study=study,
                     deleted_at__isnull=True,
                 )
                 if action == "rotate":
@@ -407,6 +423,7 @@ def dashboard(request):
         elif action == "reopen":
             assignment = get_object_or_404(
                 Assignment,
+                session__study=study,
                 pk=request.POST["assignment"],
                 removed_at__isnull=True,
                 session__deleted_at__isnull=True,
@@ -416,6 +433,7 @@ def dashboard(request):
         elif action == "delete_submission":
             submission = get_object_or_404(
                 Submission,
+                assignment__session__study=study,
                 pk=request.POST["submission"],
                 assignment__removed_at__isnull=True,
                 assignment__session__deleted_at__isnull=True,
@@ -430,28 +448,27 @@ def dashboard(request):
                 )
             )
         elif action == "corpus":
-            notice = f"Imported {import_zip(request.FILES['file'])} documents"
+            notice = f"Imported {import_zip(study, request.FILES['file'])} documents"
+        elif action == "update_instructions":
+            update_session_instructions(study, request.POST["session"])
+            notice = "Study instructions updated for this coder. Submitted snapshots remain unchanged."
         elif action == "book":
-            with transaction.atomic():
-                SharedCodebook.objects.select_for_update().order_by("pk").first()
-                book = load_book(request.FILES["file"].read().decode())
-                previous = SharedCodebook.objects.order_by("-pk").first()
-                if previous:
-                    new_ids = {c["id"] for c in book["codes"]}
-                    if {c["id"] for c in previous.content["codes"]} - new_ids:
-                        raise ValueError(
-                            "Archive existing shared concepts instead of removing their identities"
-                        )
-                SharedCodebook.objects.create(content=book)
-                notice = "Shared codebook version published"
+            publish_codebook(study, load_book(request.FILES["file"].read().decode()))
+            study.refresh_from_db()
+            notice = "Study codebook version published"
+        else:
+            raise ValueError("Unknown study action")
     return render(
         request,
         "corpus/dashboard.html",
         dict(
+            study=study,
             notice=notice,
-            cases=Case.objects.order_by(Lower("name"), "name", "pk"),
+            cases=Case.objects.filter(study=study).order_by(
+                Lower("name"), "name", "pk"
+            ),
             sessions=CodingSession.objects.filter(
-                deleted_at__isnull=True
+                deleted_at__isnull=True, study=study
             ).prefetch_related(
                 Prefetch(
                     "invitation_emails",
@@ -460,7 +477,9 @@ def dashboard(request):
                 )
             ),
             assignments=Assignment.objects.filter(
-                removed_at__isnull=True, session__deleted_at__isnull=True
+                removed_at__isnull=True,
+                session__deleted_at__isnull=True,
+                session__study=study,
             )
             .select_related("session", "case")
             .order_by(Lower("case__name"), Lower("session__coder"), "pk"),
@@ -471,20 +490,24 @@ def dashboard(request):
                 assignment__removed_at__isnull=True,
                 assignment__session__deleted_at__isnull=True,
                 withdrawal__isnull=True,
+                assignment__session__study=study,
             )
             .order_by("-pk"),
-            shared=SharedCodebook.objects.order_by("-pk").first(),
+            shared=study.codebook,
         ),
     )
 
 
-@staff_member_required
+@admin_required
 @api_errors
-def review(request, submission_id):
+def review(request, study_id, submission_id):
+    study = get_study(request.user, study_id)
     submission = get_object_or_404(
-        Submission.objects.select_related("assignment__session__base"), pk=submission_id
+        Submission.objects.select_related("assignment__session__base"),
+        pk=submission_id,
+        assignment__session__study=study,
     )
-    shared = SharedCodebook.objects.order_by("-pk").first()
+    shared = study.codebook
     changes = differences(submission, shared)
     if request.method == "POST":
         decisions = {
@@ -497,7 +520,7 @@ def review(request, submission_id):
         merge_submission(
             submission.pk, request.user, int(request.POST["revision"]), decisions
         )
-        return redirect("review", submission_id=submission.pk)
+        return redirect("review", study_id=study.pk, submission_id=submission.pk)
     changes = describe_changes(
         changes,
         submission.assignment.session.base.content,
@@ -540,6 +563,7 @@ def review(request, submission_id):
         request,
         "corpus/review.html",
         dict(
+            study=study,
             submission=submission,
             changes=changes,
             shared=shared,
@@ -552,21 +576,25 @@ def review(request, submission_id):
     )
 
 
-@staff_member_required
-def shared_export(request):
+@admin_required
+def shared_export(request, study_id):
+    study = get_study(request.user, study_id)
     shared = (
-        get_object_or_404(SharedCodebook, pk=request.GET.get("revision"))
+        get_object_or_404(SharedCodebook, study=study, pk=request.GET.get("revision"))
         if request.GET.get("revision")
-        else SharedCodebook.objects.order_by("-pk").first()
+        else study.codebook
     )
     if not shared:
         raise Http404
     return yaml_response(shared.content, "shared-codebook")
 
 
-@staff_member_required
-def results_export(request, submission_id):
-    submission = get_object_or_404(Submission, pk=submission_id)
+@admin_required
+def results_export(request, study_id, submission_id):
+    study = get_study(request.user, study_id)
+    submission = get_object_or_404(
+        Submission, pk=submission_id, assignment__session__study=study
+    )
     audit = MergeAudit.objects.filter(submission=submission).first()
     mappings = audit.mappings if audit else {}
     shared_book = audit.result if audit else submission.assignment.session.base
@@ -651,21 +679,23 @@ def health(request):
     return JsonResponse({"status": "ok"})
 
 
-@staff_member_required
-def coding_archive(request):
+@admin_required
+def coding_archive(request, study_id):
+    study = get_study(request.user, study_id)
     return render(
         request,
         "corpus/archive.html",
         dict(
-            sessions=CodingSession.objects.filter(deleted_at__isnull=False).order_by(
-                "-deleted_at"
-            ),
-            assignments=Assignment.objects.filter(
-                Q(removed_at__isnull=False) | Q(session__deleted_at__isnull=False)
-            )
+            study=study,
+            sessions=CodingSession.objects.filter(
+                study=study, deleted_at__isnull=False
+            ).order_by("-deleted_at"),
+            assignments=Assignment.objects.filter(session__study=study)
+            .filter(Q(removed_at__isnull=False) | Q(session__deleted_at__isnull=False))
             .select_related("session", "case")
             .order_by("-removed_at", "-pk"),
-            submissions=Submission.objects.filter(
+            submissions=Submission.objects.filter(assignment__session__study=study)
+            .filter(
                 Q(withdrawal__isnull=False)
                 | Q(assignment__removed_at__isnull=False)
                 | Q(assignment__session__deleted_at__isnull=False)
@@ -674,3 +704,10 @@ def coding_archive(request):
             .order_by("-pk"),
         ),
     )
+
+
+def selected_cases(study, identities):
+    result = list(Case.objects.filter(study=study, pk__in=identities))
+    if len(result) != len(set(identities)):
+        raise Http404("One or more cases are not in this study")
+    return result

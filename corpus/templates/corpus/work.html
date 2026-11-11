@@ -1,6 +1,6 @@
 {% extends 'corpus/base.html' %}{% load static %}{% block navigation %}<span
   >{{ coder }}</span
-><a href="/work/codebook.yaml">Export YAML</a
+><span>{{ study.title }}</span><button id="open-instructions" class="secondary">Questions and guidelines</button><a href="/work/codebook.yaml">Export YAML</a
 ><button id="open-book" class="secondary">Edit codebook</button>{% endblock %}{% block content %}
 <link rel="stylesheet" href="{% static 'corpus/markdown.css' %}">
 <form hidden>{% csrf_token %}</form>
@@ -49,6 +49,7 @@
   <h2 id="memo-dialog-title">Annotation memos</h2>
   <div id="memo-editors"></div>
 </dialog>
+<dialog id="instructions-dialog"><form method="dialog"><button class="close secondary">Close</button></form><h2>Study questions and coding guidelines</h2><div id="study-instructions"></div></dialog>
 <dialog id="book-dialog">
   <form method="dialog"><button class="close secondary">Close</button></form>
   <h2>Personal codebook</h2>

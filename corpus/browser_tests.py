@@ -1,5 +1,7 @@
-"""Optional real-browser workflow. Run manage.py test corpus.browser_tests."""
+from .test_support import new_study
+from .studies import publish_codebook
 
+"""Optional real-browser workflow. Run manage.py test corpus.browser_tests."""
 import os
 import uuid
 from django.contrib.auth import get_user_model
@@ -9,11 +11,14 @@ from .models import Case, SharedCodebook
 
 
 class BrowserWorkflowTests(StaticLiveServerTestCase):
+
     def test_assignment_to_codebook_merge(self):
+        self.study = new_study()
         from playwright.sync_api import sync_playwright
 
-        SharedCodebook.objects.create(
-            content=dict(
+        publish_codebook(
+            self.study,
+            book=dict(
                 version=1,
                 codes=[
                     dict(
@@ -25,18 +30,19 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
                         references=[],
                     )
                 ],
-            )
+            ),
         )
-        # Exercise a long taxonomy that previously pushed Save below the viewport.
-        book = SharedCodebook.objects.get()
+        book = SharedCodebook.objects.order_by("-pk").first()
         book.content["codes"].extend(
-            dict(
-                id=str(uuid.uuid4()),
-                kind="code",
-                name=f"Taxonomy leaf {index}",
-                parent=None,
+            (
+                dict(
+                    id=str(uuid.uuid4()),
+                    kind="code",
+                    name=f"Taxonomy leaf {index}",
+                    parent=None,
+                )
+                for index in range(70)
             )
-            for index in range(70)
         )
         names = [
             "Zulu category",
@@ -94,10 +100,12 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
                 ),
             ]
         )
-        # Shared revisions are immutable, so publish a new setup revision.
-        SharedCodebook.objects.create(content=book.content)
-        case = Case.objects.create(key="browser", name="Example OSS project")
+        publish_codebook(self.study, book=book.content)
+        case = Case.objects.create(
+            key="browser", name="Example OSS project", study=self.study
+        )
         put_document(
+            self.study,
             "browser-document",
             "AI_POLICY.md",
             "Contributors must disclose AI use. Human review is required. 😀",
@@ -107,6 +115,8 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
         get_user_model().objects.create_superuser(
             "test-admin", "test@example.org", "test-password"
         )
+        self.study.owner = get_user_model().objects.get(username="test-admin")
+        self.study.save(update_fields=["owner"])
         with sync_playwright() as playwright:
             options = {"headless": True}
             if os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE"):
@@ -117,7 +127,10 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             admin = browser.new_page(viewport={"width": 1440, "height": 1000})
             errors = []
             admin.on("pageerror", lambda error: errors.append(str(error)))
-            admin.goto(self.live_server_url + "/admin/login/?next=/")
+            admin.goto(
+                self.live_server_url
+                + ("/admin/login/?next=" + f"/admin/studies/{self.study.pk}/")
+            )
             admin.get_by_label("Username:").fill("test-admin")
             admin.get_by_label("Password:").fill("test-password")
             admin.get_by_role("button", name="Log in").click()
@@ -136,17 +149,8 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             self.assertGreater(
                 coder.locator("#code-tree").bounding_box()["height"], 400
             )
-
             coder.locator("#document").evaluate(
-                """node => {
-                const range = document.createRange();
-                const text = document.createTreeWalker(node, NodeFilter.SHOW_TEXT).nextNode();
-                range.setStart(text, 0);
-                range.setEnd(text, 12);
-                const selection = window.getSelection();
-                selection.removeAllRanges(); selection.addRange(range);
-                node.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
-            }"""
+                "node => {\n                const range = document.createRange();\n                const text = document.createTreeWalker(node, NodeFilter.SHOW_TEXT).nextNode();\n                range.setStart(text, 0);\n                range.setEnd(text, 12);\n                const selection = window.getSelection();\n                selection.removeAllRanges(); selection.addRange(range);\n                node.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));\n            }"
             )
             self.assertEqual(
                 coder.evaluate("window.getSelection().toString()"), "Contributors"
@@ -172,18 +176,20 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             ]
             self.assertEqual(actual, [term_ids[name] for name in expected])
             child_option = next(
-                option for option in options if option["id"] == term_ids["Child code"]
+                (option for option in options if option["id"] == term_ids["Child code"])
             )
-            self.assertTrue(child_option["label"].startswith("\u00a0" * 4))
+            self.assertTrue(child_option["label"].startswith("\xa0" * 4))
             self.assertEqual(
                 child_option["path"], "Zulu category › Alpha parent › Child code"
             )
             self.assertIn(
                 "(Category)",
                 next(
-                    option["label"]
-                    for option in options
-                    if option["id"] == term_ids["Zulu category"]
+                    (
+                        option["label"]
+                        for option in options
+                        if option["id"] == term_ids["Zulu category"]
+                    )
                 ),
             )
             labels = coder.locator("#code-tree .code-row label").all_text_contents()
@@ -224,7 +230,6 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
                 save_rect["y"] + save_rect["height"],
                 coder.evaluate("window.innerHeight"),
             )
-            # Filtering the tree must preserve selected codes hidden by the search.
             coder.get_by_label("Find a code").fill("Human")
             coder.get_by_label("Annotation memo", exact=True).fill("Coding evidence")
             coder.get_by_role("button", name="Save annotation", exact=True).click()
@@ -236,14 +241,8 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             )
             self.assertEqual(coder.locator("#code-tree input:checked").count(), 0)
             self.assertTrue(coder.locator("#code-tree input").first.is_disabled())
-            # Selecting another passage starts with no code and keeps its selection visible.
             coder.locator("#document").evaluate(
-                """root=>{
-                const text=root.querySelector('mark').firstChild;
-                const selection=window.getSelection();
-                selection.setBaseAndExtent(text,4,text,0);
-                root.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
-            }"""
+                "root=>{\n                const text=root.querySelector('mark').firstChild;\n                const selection=window.getSelection();\n                selection.setBaseAndExtent(text,4,text,0);\n                root.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));\n            }"
             )
             self.assertEqual(coder.evaluate("window.getSelection().toString()"), "Cont")
             self.assertEqual(coder.locator("#code-tree input:checked").count(), 0)
@@ -252,7 +251,6 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             self.assertEqual(
                 coder.locator("#document mark.annotation-preview").count(), 0
             )
-
             self.assertEqual(
                 coder.locator("#annotation-count").inner_text(), "1 saved annotation"
             )
@@ -262,24 +260,20 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
                     "node => node.style.background.includes('#f08080') || node.style.background.includes('240, 128, 128')"
                 )
             )
-            # A second, overlapping code must produce two visible color bands.
             state = coder.evaluate(
                 "fetch('/api/state/').then(response => response.json())"
             )
             assignment_id = state["assignments"][0]["id"]
             version = state["assignments"][0]["documents"][0]
             original = next(
-                code
-                for code in state["codebook"]["codes"]
-                if code["name"] == "Human review"
+                (
+                    code
+                    for code in state["codebook"]["codes"]
+                    if code["name"] == "Human review"
+                )
             )
             result = coder.evaluate(
-                """async data => {
-                const response = await fetch(`/api/assignments/${data.assignment}/annotations/`, {
-                    method:'POST', headers:{'Content-Type':'application/json', 'X-CSRFToken':document.querySelector('[name=csrfmiddlewaretoken]').value},
-                    body:JSON.stringify(data.annotation)
-                }); return response.status;
-            }""",
+                "async data => {\n                const response = await fetch(`/api/assignments/${data.assignment}/annotations/`, {\n                    method:'POST', headers:{'Content-Type':'application/json', 'X-CSRFToken':document.querySelector('[name=csrfmiddlewaretoken]').value},\n                    body:JSON.stringify(data.annotation)\n                }); return response.status;\n            }",
                 dict(
                     assignment=assignment_id,
                     annotation=dict(
@@ -304,7 +298,6 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
                 ),
                 5,
             )
-            # Right-click actions identify overlapping annotations individually.
             coder.locator("#document mark").first.click(button="right")
             coder.locator("#annotation-context-menu").wait_for(state="visible")
             self.assertEqual(
@@ -320,7 +313,6 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             coder.locator("#annotation-context-menu").wait_for(state="visible")
             coder.keyboard.press("Escape")
             self.assertTrue(coder.locator("#annotation-context-menu").is_hidden())
-            # Highlight clicks expose each overlapping annotation's memo.
             before = coder.evaluate("fetch('/api/state/').then(r => r.json())")[
                 "assignments"
             ][0]["annotations"]
@@ -338,11 +330,13 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
                 "assignments"
             ][0]["annotations"]
             changed = next(
-                item
-                for item in after
-                if item["memo"] == "Memo edited from highlighted passage"
+                (
+                    item
+                    for item in after
+                    if item["memo"] == "Memo edited from highlighted passage"
+                )
             )
-            original = next(item for item in before if item["id"] == changed["id"])
+            original = next((item for item in before if item["id"] == changed["id"]))
             self.assertEqual(changed["codes"], original["codes"])
             self.assertEqual(
                 (changed["start"], changed["end"]), (original["start"], original["end"])
@@ -360,7 +354,6 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             ).first.click()
             self.assertEqual(coder.locator("#memo-dialog textarea").count(), 1)
             coder.locator("#close-memos").click()
-            # Editing a saved annotation autosaves without an explicit save click.
             coder.locator("#annotations").get_by_role(
                 "button", name="Edit", exact=True
             ).first.click()
@@ -368,22 +361,27 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             coder.locator("#annotations").get_by_text(
                 "Revised evidence", exact=True
             ).wait_for()
-            # Delete one overlap, preserving the other annotation and its highlight.
             current = coder.evaluate("fetch('/api/state/').then(r => r.json())")
             human_id = next(
-                code["id"]
-                for code in current["codebook"]["codes"]
-                if code["name"] == "Human review"
+                (
+                    code["id"]
+                    for code in current["codebook"]["codes"]
+                    if code["name"] == "Human review"
+                )
             )
             deleted_id = next(
-                item["id"]
-                for item in current["assignments"][0]["annotations"]
-                if human_id in item["codes"]
+                (
+                    item["id"]
+                    for item in current["assignments"][0]["annotations"]
+                    if human_id in item["codes"]
+                )
             )
             kept_id = next(
-                item["id"]
-                for item in current["assignments"][0]["annotations"]
-                if item["id"] != deleted_id
+                (
+                    item["id"]
+                    for item in current["assignments"][0]["annotations"]
+                    if item["id"] != deleted_id
+                )
             )
             coder.locator("#document mark").first.click(button="right")
             coder.locator(
@@ -401,27 +399,16 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             ][0]["annotations"]
             self.assertEqual([item["id"] for item in remaining], [kept_id])
             self.assertGreater(coder.locator("#document mark").count(), 0)
-            # Deleting one modal entry preserves the overlapping annotation.
             duplicate = coder.evaluate(
-                """async ()=>{
-                const state=await fetch('/api/state/').then(r=>r.json());
-                const owner=state.assignments[0];
-                const {id,...annotation}=owner.annotations[0];
-                const response=await fetch(`/api/assignments/${owner.id}/annotations/`,{
-                    method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':document.querySelector('[name=csrfmiddlewaretoken]').value},
-                    body:JSON.stringify({...annotation,revision:owner.revision,codebook_revision:state.revision,memo:'Delete from memo modal'})
-                });
-                if(!response.ok)throw Error('Unable to create modal-delete fixture');
-                return (await response.json()).annotations.find(a=>a.memo==='Delete from memo modal');
-            }"""
+                "async ()=>{\n                const state=await fetch('/api/state/').then(r=>r.json());\n                const owner=state.assignments[0];\n                const {id,...annotation}=owner.annotations[0];\n                const response=await fetch(`/api/assignments/${owner.id}/annotations/`,{\n                    method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':document.querySelector('[name=csrfmiddlewaretoken]').value},\n                    body:JSON.stringify({...annotation,revision:owner.revision,codebook_revision:state.revision,memo:'Delete from memo modal'})\n                });\n                if(!response.ok)throw Error('Unable to create modal-delete fixture');\n                return (await response.json()).annotations.find(a=>a.memo==='Delete from memo modal');\n            }"
             )
             coder.reload()
             coder.locator("#document mark").first.click()
             coder.locator(
-                f'#memo-dialog [data-annotation-id="{duplicate["id"]}"]'
+                f"""#memo-dialog [data-annotation-id="{duplicate['id']}"]"""
             ).get_by_role("button", name="Delete annotation", exact=True).click()
             coder.locator(
-                f'#memo-dialog [data-annotation-id="{duplicate["id"]}"]'
+                f"""#memo-dialog [data-annotation-id="{duplicate['id']}"]"""
             ).wait_for(state="detached")
             self.assertTrue(coder.locator("#memo-dialog").is_visible())
             self.assertEqual(coder.locator("#memo-dialog .memo-editor").count(), 1)
@@ -473,8 +460,7 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
                 .first.is_disabled()
             )
             coder.locator("#close-memos").click()
-
-            admin.goto(self.live_server_url + "/")
+            admin.goto(self.live_server_url + f"/admin/studies/{self.study.pk}/")
             admin.get_by_role(
                 "link", name="Review submission", exact=False
             ).first.click()
@@ -484,10 +470,18 @@ class BrowserWorkflowTests(StaticLiveServerTestCase):
             self.assertGreater(count, 1)
             decisions.first.select_option("reject")
             admin.get_by_role("button", name="Accept all proposals", exact=True).click()
-            self.assertEqual(decisions.evaluate_all("nodes => nodes.map(n => n.value)"), ["accept"] * count)
-            self.assertTrue(admin.get_by_role("button", name="Apply review decisions").is_visible())
-            self.assertFalse(admin.get_by_text("Codebook review completed.", exact=False).is_visible())
-            # Individual decisions remain editable after batch selection.
+            self.assertEqual(
+                decisions.evaluate_all("nodes => nodes.map(n => n.value)"),
+                ["accept"] * count,
+            )
+            self.assertTrue(
+                admin.get_by_role("button", name="Apply review decisions").is_visible()
+            )
+            self.assertFalse(
+                admin.get_by_text(
+                    "Codebook review completed.", exact=False
+                ).is_visible()
+            )
             decisions.first.select_option("reject")
             self.assertEqual(decisions.first.input_value(), "reject")
             admin.get_by_role("button", name="Accept all proposals", exact=True).click()
