@@ -1,10 +1,11 @@
 from django.contrib.auth.views import LoginView
-from corpus import admin_tools
+from corpus import admin_tools, github_views
 from django.urls import path, include
 from corpus import views, study_views
 from corpus.reporting_views import coding_report
 
 study_urls = [
+    path("github/", github_views.status, name="github-status"),
     path("coding/", admin_tools.coding_workspace, name="admin-coding"),
     path(
         "coding/codebook/", admin_tools.coding_book_view, name="admin-personal-codebook"
@@ -44,6 +45,9 @@ study_urls = [
 urlpatterns = [
     path("healthz/", views.health),
     path("", study_views.study_list, name="study-list"),
+    path("admin/studies/from-github/", github_views.create, name="github-create"),
+    path("admin/github/connect/", github_views.oauth_start, name="github-connect"),
+    path("admin/github/callback/", github_views.oauth_callback, name="github-callback"),
     path("admin/studies/<uuid:study_id>/", include(study_urls)),
     path(
         "admin/login/",

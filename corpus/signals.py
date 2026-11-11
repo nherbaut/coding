@@ -5,6 +5,10 @@ from .models import Document, Assignment, CodingGuideline
 
 @receiver(m2m_changed, sender=Document.cases.through)
 def document_cases(sender, instance, action, reverse, pk_set, **kwargs):
+    if action in ("pre_add", "pre_remove", "pre_clear"):
+        from .github_sync import require_mutable_corpus
+
+        require_mutable_corpus(instance.study_id)
     if action != "pre_add":
         return
     if reverse:

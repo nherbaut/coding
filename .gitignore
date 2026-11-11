@@ -9,3 +9,6 @@ research/
 *.sql
 
 frontend/node_modules
+
+# Server-side GitHub App private keys
+github-secrets/

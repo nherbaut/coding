@@ -57,7 +57,9 @@ def create_study(owner, title, description=""):
 
 
 @transaction.atomic
-def publish_codebook(study, book, *, expected_revision):
+def publish_codebook(
+    study, book, *, expected_revision, actor="", origin="codebook-publication"
+):
     from .services import validate_book
 
     study = Study.objects.select_for_update().get(pk=study.pk)
@@ -99,6 +101,9 @@ def publish_codebook(study, book, *, expected_revision):
     revision = SharedCodebook.objects.create(study=study, content=deepcopy(book))
     study.codebook = revision
     study.save(update_fields=["codebook"])
+    from .github_sync import record_event
+
+    record_event(study.pk, origin, revision=revision, actor=actor)
     return revision
 
 
@@ -127,6 +132,9 @@ def publish_instructions(study, admin):
     )
     study.instructions = revision
     study.save(update_fields=["instructions"])
+    from .github_sync import record_event
+
+    record_event(study.pk, "instructions-publication", actor=admin.pk)
     return revision
 
 

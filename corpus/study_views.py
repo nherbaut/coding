@@ -224,6 +224,10 @@ def study_protocol(request, study_id):
 @api_errors
 def study_corpus(request, study_id):
     study = get_study(request.user, study_id)
+    if request.method == "POST":
+        from .github_sync import require_mutable_corpus
+
+        require_mutable_corpus(study.pk)
     notice = ""
     if request.method == "POST":
         action = request.POST["action"]

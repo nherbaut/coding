@@ -162,3 +162,9 @@ In **Coder sessions**, open **Duplicate request for another coder**, enter the n
 Coders can use **View codebook** in the workspace to open a read-only graph in a separate tab. It shows their own personal hierarchy, colors, memos, rationale and references, with search, pan/zoom, layout and collapse/expand. It has no publication endpoint or editing controls. Personal proposal editing remains available from **Edit codebook**. Admin coding workspaces have the same read-only personal view, independent of any private coder session open in the browser.
 
 `corpus.browser_invite_view_tests` exercises duplication and the read-only graph with captured email.
+
+### GitHub-backed studies
+
+**Create a study from GitHub** imports a new study from a repository/branch through a GitHub App and freezes its corpus. A separate worker automatically publishes submitted coding, status changes and the shared codebook's replayable patch history. **GitHub** in study navigation shows synchronization status, conflicts, pause/resume and retry controls. Existing studies cannot be attached.
+
+See [GitHub setup, repository format and recovery](docs/GITHUB.md) for App registration, secure server configuration, the `codebook/` and `corpus/` layout, offline history verification and the required real-repository activation check. No GitHub credentials are bundled with this application.

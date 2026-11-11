@@ -128,7 +128,11 @@ def graph_publish(request, study_id):
     study = get_study(request.user, study_id)
     body = json.loads(request.body)
     revision = publish_codebook(
-        study, body["codebook"], expected_revision=body["revision"]
+        study,
+        body["codebook"],
+        expected_revision=body["revision"],
+        actor=request.user.pk,
+        origin="graph-publication",
     )
     return JsonResponse(
         dict(

@@ -134,6 +134,12 @@ class Case(models.Model):
     def __str__(self):
         return self.name
 
+    def save(self, *args, **kwargs):
+        from .github_sync import require_mutable_corpus
+
+        require_mutable_corpus(self.study_id)
+        return super().save(*args, **kwargs)
+
 
 class Document(models.Model):
     study = models.ForeignKey(Study, on_delete=models.CASCADE, related_name="documents")
@@ -150,6 +156,12 @@ class Document(models.Model):
 
     def __str__(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        from .github_sync import require_mutable_corpus
+
+        require_mutable_corpus(self.study_id)
+        return super().save(*args, **kwargs)
 
 
 class DocumentVersion(models.Model):
@@ -169,6 +181,9 @@ class DocumentVersion(models.Model):
     def save(self, *args, **kwargs):
         if self.pk:
             raise ValueError("Document versions are immutable")
+        from .github_sync import require_mutable_corpus
+
+        require_mutable_corpus(self.document.study_id)
         return super().save(*args, **kwargs)
 
 
@@ -371,3 +386,69 @@ class StudyAdminEmail(EmailDelivery):
     @property
     def status(self):
         return "Cancelled" if self.cancelled_at else super().status
+
+
+class GitHubStudy(models.Model):
+    study = models.OneToOneField(Study, on_delete=models.CASCADE, related_name="github")
+    repository_id = models.PositiveBigIntegerField()
+    repository = models.CharField(max_length=255)
+    installation_id = models.PositiveBigIntegerField()
+    branch = models.CharField(max_length=255)
+    initial_commit = models.CharField(max_length=64)
+    last_commit = models.CharField(max_length=64)
+    initial_revision = models.ForeignKey(SharedCodebook, on_delete=models.PROTECT)
+    initial_files = models.JSONField(default=dict)
+    corpus_blobs = models.JSONField(default=dict)
+    managed_blobs = models.JSONField(default=dict)
+    document_paths = models.JSONField(default=dict)
+    paused = models.BooleanField(default=False)
+    blocked = models.BooleanField(default=False)
+    last_error = models.TextField(blank=True)
+    next_attempt_at = models.DateTimeField(default=timezone.now)
+    lease_token = models.UUIDField(null=True)
+    locked_until = models.DateTimeField(null=True)
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["repository_id", "branch"],
+                name="unique_github_repository_branch",
+            )
+        ]
+
+
+class GitHubEvent(models.Model):
+    published = models.BooleanField(default=False, db_index=True)
+    binding = models.ForeignKey(
+        GitHubStudy, on_delete=models.CASCADE, related_name="events"
+    )
+    kind = models.CharField(max_length=40)
+    actor = models.CharField(max_length=200, blank=True)
+    revision = models.ForeignKey(SharedCodebook, null=True, on_delete=models.PROTECT)
+    created = models.DateTimeField(auto_now_add=True)
+
+
+class GitHubRun(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    binding = models.ForeignKey(
+        GitHubStudy, on_delete=models.CASCADE, related_name="runs"
+    )
+    target_event = models.PositiveBigIntegerField()
+    files = models.JSONField(default=dict)
+    event_ids = models.JSONField(default=list)
+    status = models.CharField(max_length=20, default="prepared")
+    commit = models.CharField(max_length=64, blank=True)
+    error = models.TextField(blank=True)
+    attempts = models.PositiveIntegerField(default=0)
+    created = models.DateTimeField(auto_now_add=True)
+    finished = models.DateTimeField(null=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["binding"],
+                condition=models.Q(status__in=["prepared", "retrying", "blocked"]),
+                name="one_active_github_run",
+            )
+        ]

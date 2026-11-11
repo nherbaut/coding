@@ -116,6 +116,9 @@ def delete_coder_session(session_id):
         removed_at=now, revision=F("revision") + 1
     )
     cancel_invitation_emails(session)
+    from .github_sync import record_event
+
+    record_event(session.study_id, "session-archived")
     return session
 
 
@@ -136,6 +139,9 @@ def remove_assignment(assignment_id, expected):
     assignment.save(update_fields=["removed_at", "revision"])
     # Queued invitation bodies may still list this case. Do not email a stale list.
     cancel_invitation_emails(session)
+    from .github_sync import record_event
+
+    record_event(session.study_id, "assignment-archived")
     return assignment
 
 
@@ -289,6 +295,9 @@ def submit(assignment_id, session_id, expected):
     from .notifications import queue_submission_email
 
     queue_submission_email(submission)
+    from .github_sync import record_event
+
+    record_event(session.study_id, "submitted")
     return submission
 
 
@@ -310,6 +319,9 @@ def withdraw_submission(
         submission=submission, defaults={"initiated_by": initiated_by}
     )
     if created:
+        from .github_sync import record_event
+
+        record_event(session.study_id, "submission-withdrawn")
         # Already-sent notifications remain part of the delivery history.
         SubmissionEmail.objects.filter(
             submission=submission, sent_at__isnull=True
@@ -460,7 +472,13 @@ def merge_submission(submission_id, admin, revision, decisions):
     validate_book(result)
     from .studies import publish_codebook
 
-    published = publish_codebook(study, result, expected_revision=revision)
+    published = publish_codebook(
+        study,
+        result,
+        expected_revision=revision,
+        actor=admin.pk,
+        origin="proposal-review",
+    )
     return MergeAudit.objects.create(
         submission=submission,
         admin=admin,

@@ -128,3 +128,12 @@ if CASE_EMAIL_ENABLED:
         or not urlsplit(PUBLIC_BASE_URL).hostname
     ):
         raise RuntimeError("Set PUBLIC_BASE_URL to the website address")
+
+# GitHub App credentials belong to this server, not to study exports.
+GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID", "")
+GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")
+GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")
+GITHUB_PRIVATE_KEY_FILE = os.environ.get("GITHUB_PRIVATE_KEY_FILE", "")
+GITHUB_APP_SLUG = os.environ.get("GITHUB_APP_SLUG", "")
+GITHUB_IMPORT_MAX_BYTES = 100 * 1024 * 1024
+GITHUB_SYNC_LEASE_SECONDS = 900

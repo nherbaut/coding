@@ -4,3 +4,6 @@ PyYAML>=6,<7
 gunicorn>=23,<24
 whitenoise>=6.8,<7
 cryptography>=44,<47
+
+PyJWT>=2.10,<3
+jsonpatch>=1.33,<2

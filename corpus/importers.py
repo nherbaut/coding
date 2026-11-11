@@ -7,6 +7,9 @@ from .models import Case, Document, DocumentVersion
 
 @transaction.atomic
 def put_document(study, key, name, text, metadata, cases):
+    from .github_sync import require_mutable_corpus
+
+    require_mutable_corpus(study.pk)
     document, _ = Document.objects.get_or_create(
         study=study, key=key, defaults={"name": name}
     )
@@ -22,6 +25,9 @@ def put_document(study, key, name, text, metadata, cases):
 
 @transaction.atomic
 def import_zip(study, file):
+    from .github_sync import require_mutable_corpus
+
+    require_mutable_corpus(study.pk)
     with zipfile.ZipFile(file) as archive:
         if sum(info.file_size for info in archive.infolist()) > 100 * 1024 * 1024:
             raise ValueError("Uncompressed corpus exceeds 100 MB")

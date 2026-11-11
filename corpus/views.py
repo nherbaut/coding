@@ -550,6 +550,8 @@ def dashboard(request, study_id):
                 study,
                 load_book(request.FILES["file"].read().decode()),
                 expected_revision=int(request.POST["revision"]),
+                actor=request.user.pk,
+                origin="yaml-publication",
             )
             study.refresh_from_db()
             notice = "Study codebook version published"

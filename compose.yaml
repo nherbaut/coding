@@ -37,6 +37,11 @@ services:
       AUTHELIA_ADMIN_GROUP: ${AUTHELIA_ADMIN_GROUP:-coding-admins}
       AUTHELIA_PROXY_SECRET: ${AUTHELIA_PROXY_SECRET:?Set AUTHELIA_PROXY_SECRET}
       AUTHELIA_TRUSTED_PROXIES: ${AUTHELIA_TRUSTED_PROXIES:?Set AUTHELIA_TRUSTED_PROXIES}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      GITHUB_PRIVATE_KEY_FILE: ${GITHUB_PRIVATE_KEY_FILE:-}
     depends_on:
       db:
         condition: service_healthy
@@ -45,12 +50,15 @@ services:
       - CMD
       - python
       - -c
-      - import os, urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/healthz/', headers={'Host':os.environ.get('ALLOWED_HOSTS','localhost').split(',')[0]}),
+      - import os, urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/healthz/',
+        headers={'Host':os.environ.get('ALLOWED_HOSTS','localhost').split(',')[0]}),
         timeout=5)
       interval: 15s
       timeout: 10s
       retries: 3
       start_period: 30s
+    volumes:
+    - ./github-secrets:/run/coding-github:ro
   mailer:
     build: .
     environment: *coding_environment
@@ -58,6 +66,20 @@ services:
     - python
     - manage.py
     - deliver_notifications
+    - --watch
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+  github-sync:
+    build: .
+    environment: *coding_environment
+    volumes:
+    - ./github-secrets:/run/coding-github:ro
+    command:
+    - python
+    - manage.py
+    - sync_github
     - --watch
     restart: unless-stopped
     depends_on:

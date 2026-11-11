@@ -23,3 +23,13 @@ web-backup:
 	docker compose exec -T db pg_dump -U coding coding > "$(WEB_BACKUP)"
 
 .PHONY: web-up web-migrate web-local-admin web-import web-test web-backup
+
+web-github-sync:
+	docker compose run --rm github-sync python manage.py sync_github
+
+GITHUB_EXPORT ?=
+web-verify-github-export:
+	@test -n "$(GITHUB_EXPORT)" || (echo 'Use make web-verify-github-export GITHUB_EXPORT=/path/to/repo'; exit 2)
+	$(PYTHON) manage.py verify_github_export "$(GITHUB_EXPORT)"
+
+.PHONY: web-github-sync web-verify-github-export

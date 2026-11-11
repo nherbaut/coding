@@ -31,7 +31,7 @@
     <article>
       <h2>Corpus and shared codebook</h2>
       <p>Study codebook version {{ shared.pk|default:'—' }}</p>
-      <form method="post" enctype="multipart/form-data">
+      {% if not study.github %}<form method="post" enctype="multipart/form-data">
         {% csrf_token %}<input
           type="hidden"
           name="action"
@@ -43,7 +43,7 @@
             accept=".zip"
             required /></label
         ><button>Import corpus</button>
-      </form>
+      </form>{% else %}<p>Corpus frozen at the initial GitHub commit.</p>{% endif %}
       <form method="post" enctype="multipart/form-data">
         {% csrf_token %}<input type="hidden" name="action" value="book" /><input type="hidden" name="revision" value="{{ shared.pk }}"><label
           >Codebook YAML<input
