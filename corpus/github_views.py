@@ -5,6 +5,7 @@ import hashlib
 import secrets
 import time
 import uuid
+import datetime
 from urllib.parse import urlencode
 from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
@@ -17,7 +18,8 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST, require_GET
 from .permissions import admin_required
 from .studies import get_study
-from .models import GitHubStudy
+from .models import GitHubStudy, GitHubImportDraft
+from .github_uploads import uploaded_repository
 from .github_client import (
     GitHubClient,
     GitHubError,
@@ -149,8 +151,12 @@ def selection(request, client, selection):
         raise ValueError("Choose a valid branch")
     installation = int(selection["installation"])
     remote = installation_client(installation, repository["id"])
-    head = remote.head(repository["full_name"], branch)
-    tree = remote.tree(repository["full_name"], head["tree"])
+    head = (
+        remote.initial_head(repository["full_name"], branch)
+        if selection.get("source") == "uploads"
+        else remote.head(repository["full_name"], branch)
+    )
+    tree = remote.tree(repository["full_name"], head["tree"]) if head["tree"] else {}
     files = remote.read_files(repository["full_name"], tree)
     return repository, installation, remote, head, tree, files
 
@@ -178,7 +184,10 @@ def create(request):
                     installation=int(installation),
                     branch=request.POST.get("branch", "").strip(),
                     title=request.POST.get("title", "").strip(),
+                    source=request.POST.get("source", "repository"),
                 )
+                if choice["source"] not in ("uploads", "repository"):
+                    raise ValueError("Choose repository data or upload initialization")
                 if not choice["title"] or len(choice["title"]) > 200:
                     raise ValueError("Enter a study title of at most 200 characters")
                 repository, installation, _, head, tree, files = selection(
@@ -190,7 +199,25 @@ def create(request):
                     raise ValueError(
                         "This repository and branch already belong to a study"
                     )
+                if choice["source"] == "uploads":
+                    if tree:
+                        raise ValueError(
+                            "Upload initialization requires an empty corpus/ and codebook/; existing README and other unrelated files are preserved"
+                        )
+                    files = uploaded_repository(
+                        request.FILES.get("corpus"), request.FILES.get("codebook")
+                    )
                 data = inspect_repository(files, repository["id"])
+                if choice["source"] == "uploads":
+                    previous = request.session.get("github_preview", {}).get("draft")
+                    if previous:
+                        GitHubImportDraft.objects.filter(
+                            pk=previous, owner=request.user
+                        ).delete()
+                    draft = GitHubImportDraft.objects.create(
+                        owner=request.user, files=files
+                    )
+                    choice["draft"] = str(draft.pk)
                 choice.update(commit=head["sha"], nonce=secrets.token_urlsafe(32))
                 request.session["github_preview"] = choice
                 context.update(
@@ -214,6 +241,22 @@ def create(request):
                         "The branch changed after the preview. Preview the current branch before importing.",
                         conflict=True,
                     )
+                if choice.get("source") == "uploads":
+                    if tree:
+                        raise GitHubError(
+                            "Repository data appeared after preview. Preview again before initializing.",
+                            conflict=True,
+                        )
+                    draft = GitHubImportDraft.objects.filter(
+                        pk=choice.get("draft"),
+                        owner=request.user,
+                        created__gte=timezone.now() - datetime.timedelta(hours=1),
+                    ).first()
+                    if not draft:
+                        raise ValueError(
+                            "The upload preview expired. Upload the corpus and codebook again."
+                        )
+                    files = draft.files
                 study = import_study(
                     request.user,
                     repository,
@@ -223,7 +266,12 @@ def create(request):
                     files,
                     tree,
                     choice["title"],
+                    bootstrap=choice.get("source") == "uploads",
                 )
+                if choice.get("draft"):
+                    GitHubImportDraft.objects.filter(
+                        pk=choice["draft"], owner=request.user
+                    ).delete()
                 request.session.pop("github_preview", None)
                 messages.success(
                     request,

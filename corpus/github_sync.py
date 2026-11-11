@@ -44,11 +44,26 @@ def record_event(study_id, kind, *, revision=None, actor=""):
 
 
 @transaction.atomic
-def import_study(owner, repository, branch, installation, head, files, tree, title):
+def import_study(
+    owner,
+    repository,
+    branch,
+    installation,
+    head,
+    files,
+    tree,
+    title,
+    *,
+    bootstrap=False,
+):
     from .studies import create_study, publish_instructions
     from .importers import put_document
     from .models import ResearchQuestion, CodingGuideline
 
+    if bootstrap and tree:
+        raise ValueError(
+            "Upload initialization cannot replace existing repository data"
+        )
     data = inspect_repository(files, repository["id"])
     if GitHubStudy.objects.filter(
         repository_id=repository["id"], branch=branch
@@ -108,6 +123,7 @@ def import_study(owner, repository, branch, installation, head, files, tree, tit
     source_paths = {doc["path"] for doc in data["documents"]}
     binding = GitHubStudy.objects.create(
         study=study,
+        bootstrap_pending=bootstrap,
         repository_id=repository["id"],
         repository=repository["full_name"],
         installation_id=installation,
@@ -118,10 +134,14 @@ def import_study(owner, repository, branch, installation, head, files, tree, tit
         initial_files={
             path: content
             for path, content in files.items()
-            if path.startswith("codebook/")
+            if bootstrap or path.startswith("codebook/")
         },
         corpus_blobs={
-            path: {"sha": tree[path]["sha"], "mode": tree[path]["mode"]}
+            path: (
+                {"sha": blob_sha(files[path]), "mode": "100644"}
+                if bootstrap
+                else {"sha": tree[path]["sha"], "mode": tree[path]["mode"]}
+            )
             for path in source_paths
         },
         managed_blobs={path: item["sha"] for path, item in tree.items()},
@@ -417,7 +437,20 @@ def prepare_run(binding):
 
 
 def publish_run(binding, run, client):
-    head = client.head(binding.repository, binding.branch)
+    if binding.bootstrap_pending:
+        head = client.initial_head(binding.repository, binding.branch)
+        if not head["sha"]:
+            heartbeat(binding.pk, binding.lease_token)
+            client.seed_repository(
+                binding.repository,
+                binding.branch,
+                "codebook/codebook-base.yaml",
+                run.files["codebook/codebook-base.yaml"],
+                f"Initialize Coding study {binding.study_id}",
+            )
+            head = client.initial_head(binding.repository, binding.branch)
+    else:
+        head = client.head(binding.repository, binding.branch)
     tree = client.tree(binding.repository, head["tree"])
     heartbeat(binding.pk, binding.lease_token)
     source_paths = set(corpus_paths(tree))
@@ -426,7 +459,21 @@ def publish_run(binding, run, client):
         for path, item in tree.items()
         if path in source_paths
     }
-    if actual_corpus != binding.corpus_blobs:
+    desired = {path: blob_sha(content) for path, content in run.files.items()}
+    complete = actual_corpus == binding.corpus_blobs and all(
+        tree.get(path, {}).get("sha") == sha for path, sha in desired.items()
+    )
+    if binding.bootstrap_pending and not complete:
+        seed = "codebook/codebook-base.yaml"
+        if actual_corpus or any(
+            path != seed or item["sha"] != desired[seed] or item.get("mode") != "100644"
+            for path, item in tree.items()
+        ):
+            raise GitHubError(
+                "Repository data appeared after the upload preview; no files were overwritten",
+                conflict=True,
+            )
+    elif actual_corpus != binding.corpus_blobs:
         raise GitHubError(
             "Frozen corpus changed in GitHub; restore the imported files before retrying",
             conflict=True,
@@ -439,7 +486,6 @@ def publish_run(binding, run, client):
             raise GitHubError(
                 f"Managed file type changed externally: {path}", conflict=True
             )
-    desired = {path: blob_sha(content) for path, content in run.files.items()}
     for path, sha in binding.managed_blobs.items():
         if path not in desired and tree.get(path, {}).get("sha") != sha:
             raise GitHubError(f"Managed file changed externally: {path}", conflict=True)
@@ -449,7 +495,15 @@ def publish_run(binding, run, client):
         if tree.get(path, {}).get("sha") != sha:
             raise GitHubError(f"Managed file changed externally: {path}", conflict=True)
     for path in desired:
-        if path in tree and path not in binding.managed_blobs:
+        if (
+            path in tree
+            and path not in binding.managed_blobs
+            and not (
+                binding.bootstrap_pending
+                and path == "codebook/codebook-base.yaml"
+                and tree[path]["sha"] == desired[path]
+            )
+        ):
             raise GitHubError(
                 f"An external file occupies an export path: {path}", conflict=True
             )
@@ -497,6 +551,7 @@ def synchronize_next(*, force=False, client_factory=installation_client):
                 raise LeaseLost("Synchronization lease was replaced")
             active.managed_blobs.update(desired)
             active.last_commit = commit
+            active.bootstrap_pending = False
             GitHubEvent.objects.filter(binding=active, pk__in=run.event_ids).update(
                 published=True
             )
@@ -507,6 +562,7 @@ def synchronize_next(*, force=False, client_factory=installation_client):
                 update_fields=[
                     "managed_blobs",
                     "last_commit",
+                    "bootstrap_pending",
                     "last_error",
                     "locked_until",
                     "lease_token",

@@ -34,7 +34,13 @@ The callback is under `/admin/`, so the existing Traefik/Authelia routing alread
 
 Initial preview and import can take several minutes for a large corpus. The web process uses a 300-second request timeout; GitHub API rate limits are reported without partially creating a study.
 
-The branch must already exist. Coding never creates an empty repository or modifies branch protection. Allow the App to push to the selected branch through the repository's rules, or choose another branch.
+You can start with an existing repository containing `codebook/` and `corpus/`, or choose **Initialize from corpus and codebook uploads** for an empty repository or one containing only a README. Other files outside the two data roots are preserved. The repository itself must already exist. Coding does not modify branch protection; allow the App to push through the repository's rules.
+
+For upload initialization, select the empty repository's **default branch** (usually `main`), provide a corpus ZIP and a codebook YAML, then preview and activate. A ZIP may use the existing `manifest.yaml` format or contain `corpus/<case>/<file>` directly. Case membership and metadata from the manifest are preserved; documents assigned to several cases are copied into each case directory. ZIP source basenames become repository filenames, with original display names retained in metadata. Case directory identifiers are URL-encoded when necessary. Path collisions, invalid references, non-UTF-8 text and symlinks are rejected.
+
+Validated uploads are staged privately for their admin for one hour; the GitHub worker removes expired previews. Finalization rechecks repository permissions and the branch commit before creating the study. No repository data roots may already exist in upload mode. A genuinely branchless repository is initialized automatically: GitHub requires a first Contents-API commit containing `codebook-base.yaml`, followed by the complete data publication commit. A repository with a README receives the complete initial export in one commit. Lost responses at either stage are recovered without duplicate seeding or overwriting existing data.
+
+The uploaded corpus is frozen when the study is created, and the uploaded codebook becomes its immutable base. You can code while the first export is queued; subsequent submissions and shared codebook changes use the normal durable synchronization workflow.
 
 Minimal layout:
 
@@ -135,4 +141,4 @@ python manage.py sync_github
 
 Local Compose includes `github-sync`; deployment uses `coding-github-sync`. Run migrations before starting the worker. Without App configuration no study can be imported from GitHub, and ordinary studies and email delivery remain operational.
 
-Run backend tests plus `corpus.browser_github_tests`. The browser test simulates provider authorization and GitHub API responses. Before enabling a real research study, install the App and verify import, one submitted case, one shared-codebook change, a conflict and replay on a dedicated test repository.
+Run backend tests plus `corpus.browser_github_tests` and `corpus.browser_github_bootstrap_tests`. The browser test simulates provider authorization and GitHub API responses. Before enabling a real research study, install the App and verify import, one submitted case, one shared-codebook change, a conflict and replay on a dedicated test repository.

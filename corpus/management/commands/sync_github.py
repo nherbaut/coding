@@ -1,9 +1,12 @@
+import datetime
 import logging
 import signal
 import threading
 from django.core.management.base import BaseCommand
 from django.db import close_old_connections, OperationalError, ProgrammingError
 from corpus.github_sync import synchronize_next
+from corpus.models import GitHubImportDraft
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +25,9 @@ class Command(BaseCommand):
         while not stop.is_set():
             try:
                 close_old_connections()
+                GitHubImportDraft.objects.filter(
+                    created__lt=timezone.now() - datetime.timedelta(hours=1)
+                ).delete()
                 for _ in range(20):
                     if stop.is_set() or not synchronize_next():
                         break

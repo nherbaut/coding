@@ -155,6 +155,43 @@ class GitHubClient:
         commit = self.api(f"/repos/{repo}/git/commits/{ref['object']['sha']}")
         return dict(sha=ref["object"]["sha"], tree=commit["tree"]["sha"])
 
+    def initial_head(self, repo, branch):
+        """Only recognize an actually branchless repository, not a missing ref."""
+        try:
+            return self.head(repo, branch)
+        except GitHubError as error:
+            if error.status not in (404, 409):
+                raise
+            branches = self.api(f"/repos/{repo}/branches?per_page=1")
+            if branches:
+                raise error
+            repository = self.api(f"/repos/{repo}")
+            if branch != repository["default_branch"]:
+                raise GitHubError(
+                    "For an empty repository, choose its default branch: "
+                    + repository["default_branch"]
+                )
+            return dict(sha="", tree="")
+
+    def seed_repository(self, repo, branch, path, content, message):
+        # The Contents API initializes the default branch of a branchless repo.
+        repository = self.api(f"/repos/{repo}")
+        if repository["default_branch"] != branch:
+            raise GitHubError(
+                "The empty repository default branch changed; retry with its current default branch",
+                conflict=True,
+            )
+        # No sha: an existing file can never be overwritten.
+        result = self.api(
+            f"/repos/{repo}/contents/{urllib.parse.quote(path,safe='/')}",
+            "PUT",
+            dict(
+                message=message,
+                content=base64.b64encode(content.encode("utf-8")).decode("ascii"),
+            ),
+        )
+        return result["commit"]["sha"]
+
     def tree(self, repo, tree):
         result = {}
 

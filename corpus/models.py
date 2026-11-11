@@ -389,13 +389,14 @@ class StudyAdminEmail(EmailDelivery):
 
 
 class GitHubStudy(models.Model):
+    bootstrap_pending = models.BooleanField(default=False)
     study = models.OneToOneField(Study, on_delete=models.CASCADE, related_name="github")
     repository_id = models.PositiveBigIntegerField()
     repository = models.CharField(max_length=255)
     installation_id = models.PositiveBigIntegerField()
     branch = models.CharField(max_length=255)
-    initial_commit = models.CharField(max_length=64)
-    last_commit = models.CharField(max_length=64)
+    initial_commit = models.CharField(max_length=64, blank=True)
+    last_commit = models.CharField(max_length=64, blank=True)
     initial_revision = models.ForeignKey(SharedCodebook, on_delete=models.PROTECT)
     initial_files = models.JSONField(default=dict)
     corpus_blobs = models.JSONField(default=dict)
@@ -452,3 +453,12 @@ class GitHubRun(models.Model):
                 name="one_active_github_run",
             )
         ]
+
+
+class GitHubImportDraft(models.Model):
+    """Temporary validated upload, scoped to its admin; never an active study."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey("auth.User", on_delete=models.CASCADE)
+    files = models.JSONField()
+    created = models.DateTimeField(auto_now_add=True)

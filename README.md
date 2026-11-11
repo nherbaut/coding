@@ -165,6 +165,6 @@ Coders can use **View codebook** in the workspace to open a read-only graph in a
 
 ### GitHub-backed studies
 
-**Create a study from GitHub** imports a new study from a repository/branch through a GitHub App and freezes its corpus. A separate worker automatically publishes submitted coding, status changes and the shared codebook's replayable patch history. **GitHub** in study navigation shows synchronization status, conflicts, pause/resume and retry controls. Existing studies cannot be attached.
+**Create a study from GitHub** imports existing repository data or initializes an empty/README-only repository from a corpus ZIP and codebook YAML through a GitHub App, then freezes the corpus. A separate worker automatically publishes submitted coding, status changes and the shared codebook's replayable patch history. **GitHub** in study navigation shows synchronization status, conflicts, pause/resume and retry controls. Existing studies cannot be attached.
 
 See [GitHub setup, repository format and recovery](docs/GITHUB.md) for App registration, secure server configuration, the `codebook/` and `corpus/` layout, offline history verification and the required real-repository activation check. No GitHub credentials are bundled with this application.
