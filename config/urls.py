@@ -6,6 +6,10 @@ from corpus.reporting_views import coding_report
 
 study_urls = [
     path("coding/", admin_tools.coding_workspace, name="admin-coding"),
+    path(
+        "coding/codebook/", admin_tools.coding_book_view, name="admin-personal-codebook"
+    ),
+    path("coding/codebook/state/", admin_tools.coding_book_view_state),
     path("coding/api/state/", admin_tools.coding_state),
     path("coding/api/codebook/", admin_tools.coding_codebook),
     path(
@@ -53,6 +57,8 @@ urlpatterns = [
     path("access/", views.access),
     path("access/exchange/", views.exchange),
     path("work/", views.workspace),
+    path("work/codebook/", views.codebook_view, name="personal-codebook"),
+    path("work/codebook/state/", views.codebook_view_state),
     path("api/state/", views.state),
     path("api/assignments/<int:assignment_id>/annotations/", views.annotation),
     path("api/assignments/<int:assignment_id>/submit/", views.complete),

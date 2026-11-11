@@ -133,7 +133,16 @@
       <button class="secondary danger">Delete coder session</button>
       <p><small>Revokes access and removes the session from this dashboard. Coding records stay available in the archive and reports.</small></p>
     </form>
-    {% if not session.admin_user_id %}<form method="post">
+    {% if not session.admin_user_id %}
+    <details class="duplicate-request"><summary>Duplicate request for another coder</summary>
+      <p>Copies all current case assignments, including completed cases, with their pinned texts. The new coder starts with empty annotations and the currently published codebook and instructions.</p>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="duplicate"><input type="hidden" name="session" value="{{ session.pk }}">
+        <label>New coder name<input name="coder" required maxlength="200" autocomplete="name"></label>
+        <label>New coder email<input name="email" type="email" required maxlength="254" autocomplete="email"></label>
+        <button>Duplicate and send invitation</button>
+      </form>
+    </details>
+    <form method="post">
       {% csrf_token %}<input type="hidden" name="action" value="send_invitation"><input type="hidden" name="session" value="{{ session.pk }}">
       <label>Coder email<input name="email" type="email" maxlength="254" value="{{ session.email }}" required></label>
       <button>Generate and email new link</button>

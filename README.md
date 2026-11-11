@@ -154,3 +154,11 @@ Open **Codebook** to edit the published hierarchy. Select a node in the graph or
 Undo/redo and all edits stay in the browser draft until **Save codebook** publishes one revision. **Discard changes** loads the latest shared version. A concurrent publication produces a conflict and retains the draft so it can be reconciled. Graph, YAML upload and proposal merges all require the expected shared revision. Moving nodes, pan/zoom, collapse/expand and automatic layout only change presentation. Unedited codebook and reference metadata is preserved; evidence memos and researcher rationale have separate fields. Leaving with unsaved changes triggers the browser warning.
 
 The graph uses locally bundled Cytoscape.js, dagre and edgehandles. Rebuild it with the existing frontend build command; the Docker image needs no Node runtime. Run `corpus.browser_admin_tools_tests` alongside the browser suite above to exercise graph connections, protected identities, conflicts, logout and admin coding end to end.
+
+### Duplicate coding requests and read-only codebooks
+
+In **Coder sessions**, open **Duplicate request for another coder**, enter the new name and email, and select **Duplicate and send invitation**. The new private request copies all current assignments, including submitted cases, with their pinned document versions. Removed assignments are excluded. The new coder gets empty annotations and personal copies of the currently published codebook and instructions. The original coder's link, coding and invitation remain unchanged. Email and request creation succeed together or roll back together.
+
+Coders can use **View codebook** in the workspace to open a read-only graph in a separate tab. It shows their own personal hierarchy, colors, memos, rationale and references, with search, pan/zoom, layout and collapse/expand. It has no publication endpoint or editing controls. Personal proposal editing remains available from **Edit codebook**. Admin coding workspaces have the same read-only personal view, independent of any private coder session open in the browser.
+
+`corpus.browser_invite_view_tests` exercises duplication and the read-only graph with captured email.

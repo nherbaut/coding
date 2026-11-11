@@ -96,6 +96,8 @@ coding_codebook = coding_endpoint(views.codebook)
 coding_complete = coding_endpoint(views.complete)
 coding_unsubmit = coding_endpoint(views.unsubmit)
 coding_export = coding_endpoint(views.personal_export)
+coding_book_view = coding_endpoint(views.codebook_view)
+coding_book_view_state = coding_endpoint(views.codebook_view_state)
 
 
 @admin_required

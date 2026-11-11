@@ -13,6 +13,7 @@ cytoscape.use(edgehandles);
 const $ = (s) => document.querySelector(s),
   cfg = $("#graph-config"),
   csrf = $("[name=csrfmiddlewaretoken]").value;
+const readOnly = cfg.dataset.readonly === "true";
 const el = (tag, text) => {
   const n = document.createElement(tag);
   if (text !== void 0) n.textContent = text;
@@ -35,7 +36,7 @@ let cy,
   eh,
   colors = {};
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const dirty = () => editorDirty || !same(book, saved);
+const dirty = () => !readOnly && (editorDirty || !same(book, saved));
 const feedback = (text, error = false) => {
   $("#graph-status").textContent = text;
   $("#graph-status").classList.toggle("error", error);
@@ -47,6 +48,7 @@ function controls() {
   $("#discard").disabled = !dirty() || saving;
 }
 function change(next) {
+  if (readOnly) return;
   validate(next);
   if (same(book, next)) return;
   undo.push(clone(book));
@@ -187,7 +189,12 @@ function inspect() {
     $(`#node-${key}`).value = c[key] || "";
   $("#node-color").value = c.color || colors[c.id] || "#bad5c8";
   $("#node-archived").checked = !!c.archived;
-  $("#node-kind").disabled = referenced.has(c.id);
+  $("#node-kind").disabled = readOnly || referenced.has(c.id);
+  $("#node-parent").disabled = readOnly;
+  $("#node-color").disabled = readOnly;
+  $("#node-archived").disabled = readOnly;
+  for (const field of ["name", "memo", "rationale"])
+    $(`#node-${field}`).readOnly = readOnly;
   $("#node-status").textContent = referenced.has(c.id)
     ? "Used in coding. This identity and its type are protected."
     : "";
@@ -241,6 +248,7 @@ function renderReferences() {
       const wrap = el("label", label),
         input = el(key === "quote" ? "textarea" : "input");
       input.value = ref[key] ?? "";
+      input.readOnly = readOnly;
       input.oninput = () => {
         if (input.value === "") delete ref[key];
         else
@@ -256,6 +264,7 @@ function renderReferences() {
     }
     const del = el("button", "Remove reference");
     del.type = "button";
+    del.hidden = readOnly;
     del.className = "secondary";
     del.onclick = () => {
       references.splice(index, 1);
@@ -268,6 +277,7 @@ function renderReferences() {
   });
 }
 function apply() {
+  if (readOnly) return false;
   if (!selected) return true;
   const next = clone(book),
     c = next.codes.find((c2) => c2.id === selected);
@@ -303,6 +313,7 @@ function deletionState() {
   $("#archive-instead").hidden = !protectedNodes;
 }
 async function request(url, body) {
+  if (readOnly && body) throw Error("This codebook view is read-only.");
   const response = await fetch(
     url,
     body
@@ -329,7 +340,11 @@ function install(data) {
   editorDirty = false;
   draw();
   inspect();
-  feedback("Shared codebook saved.");
+  feedback(
+    readOnly
+      ? "Read-only personal codebook. Select a concept to view its details."
+      : "Shared codebook saved.",
+  );
 }
 async function start() {
   const data = await request(cfg.dataset.state);
@@ -408,14 +423,15 @@ async function start() {
       },
     ],
   });
-  eh = cy.edgehandles({
-    snap: true,
-    noEdgeEventsInDraw: true,
-    disableBrowserGestures: true,
-    canConnect: (source, target) =>
-      source.id() !== target.id() &&
-      !descendants(book, target.id()).has(source.id()),
-  });
+  if (!readOnly)
+    eh = cy.edgehandles({
+      snap: true,
+      noEdgeEventsInDraw: true,
+      disableBrowserGestures: true,
+      canConnect: (source, target) =>
+        source.id() !== target.id() &&
+        !descendants(book, target.id()).has(source.id()),
+    });
   cy.on("ehcomplete", (_event, source, target, edge) => {
     edge.remove();
     try {
@@ -429,7 +445,7 @@ async function start() {
   });
   cy.on("tap", "edge", (event) => {
     selectedEdge = event.target.id();
-    $("#delete-edge").disabled = false;
+    $("#delete-edge").disabled = readOnly;
   });
   install(data);
 }

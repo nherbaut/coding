@@ -16,7 +16,7 @@ from django.core.validators import validate_email
 from django.http import JsonResponse, HttpResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_GET
 from .models import (
     Annotation,
     Assignment,
@@ -32,6 +32,7 @@ from .services import (
     assign_case,
     check_revision,
     create_session,
+    duplicate_session,
     differences,
     issue_link,
     cancel_invitation_emails,
@@ -130,12 +131,49 @@ def workspace(request):
                 if session.admin_user_id
                 else "/api/"
             ),
+            "codebook_view_url": (
+                reverse("admin-personal-codebook", args=[session.study_id])
+                if session.admin_user_id
+                else reverse("personal-codebook")
+            ),
             "personal_export_url": (
                 reverse("admin-coding-export", args=[session.study_id])
                 if session.admin_user_id
                 else "/work/codebook.yaml"
             ),
         },
+    )
+
+
+@require_GET
+def codebook_view(request):
+    session = current_session(request)
+    admin = bool(session.admin_user_id)
+    root = reverse("admin-coding", args=[session.study_id]) if admin else "/work/"
+    state_url = root + "codebook/state/"
+    return render(
+        request,
+        "corpus/graph.html",
+        dict(
+            study=session.study,
+            coder=session.coder,
+            read_only=True,
+            codebook_state_url=state_url,
+            workspace_url=root,
+        ),
+    )
+
+
+@require_GET
+def codebook_view_state(request):
+    session = current_session(request)
+    return JsonResponse(
+        dict(
+            revision=session.revision,
+            codebook=session.codebook,
+            referenced=[],
+            colors={c["id"]: code_color(c) for c in session.codebook["codes"]},
+        )
     )
 
 
@@ -391,6 +429,28 @@ def dashboard(request, study_id):
                     )
                 else:
                     notice = request.build_absolute_uri(link)
+        elif action == "duplicate":
+            source = get_object_or_404(
+                CodingSession,
+                pk=request.POST["session"],
+                study=study,
+                deleted_at__isnull=True,
+                admin_user__isnull=True,
+            )
+            with transaction.atomic():
+                session, link = duplicate_session(
+                    source.pk, request.POST["coder"], request.POST["email"].strip()
+                )
+                queue_invitation_email(session, link)
+            from django.contrib import messages
+
+            messages.success(
+                request,
+                "New coding request queued for "
+                + session.email
+                + ". The original request is unchanged.",
+            )
+            return redirect("dashboard", study_id=study.pk)
         elif action == "send_invitation":
             email = CodingSession._meta.get_field("email").clean(
                 request.POST.get("email", "").strip(), None

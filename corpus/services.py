@@ -194,6 +194,30 @@ def assign_case(session, case):
     return assignment
 
 
+@transaction.atomic
+def duplicate_session(source_id, coder, email):
+    """Copy a request's active assignments, not its personal coding or link."""
+    from django.core.validators import validate_email
+
+    source = lock_active_session(source_id)
+    if source.admin_user_id:
+        raise ValueError("Only private coder requests can be duplicated")
+    validate_email(email)
+    originals = list(
+        source.assignment_set.filter(removed_at__isnull=True)
+        .select_related("case")
+        .prefetch_related("documents")
+    )
+    session, link = create_session(
+        source.study, coder, [a.case for a in originals], email=email
+    )
+    for original in originals:
+        session.assignment_set.get(case=original.case).documents.set(
+            original.documents.all()
+        )
+    return session, link
+
+
 def span(text, start, end):
     if type(start) is not int or type(end) is not int or not 0 <= start < end:
         raise ValueError("Select a nonempty text passage")

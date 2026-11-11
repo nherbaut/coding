@@ -1,7 +1,7 @@
 {% extends 'corpus/base.html' %}{% load static %}{% block navigation %}<span
   >{{ coder }}</span
 ><span>{{ study.title }}</span><button id="open-instructions" class="secondary">Questions and guidelines</button><a href="{{ personal_export_url }}">Export YAML</a
-><button id="open-book" class="secondary">Edit codebook</button>{% endblock %}{% block content %}
+><a href="{{ codebook_view_url }}" target="_blank" rel="noopener">View codebook</a><button id="open-book" class="secondary">Edit codebook</button>{% endblock %}{% block content %}
 <link rel="stylesheet" href="{% static 'corpus/markdown.css' %}">
 <form hidden>{% csrf_token %}</form>
 <div id="workspace-config" data-api-base="{{ api_base }}"></div>
