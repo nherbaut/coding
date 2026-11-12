@@ -110,8 +110,11 @@ def delete_coder_session(session_id):
     now = timezone.now()
     session.deleted_at = now
     session.token_hash = ""
+    session.encrypted_token = ""
     session.revision += 1
-    session.save(update_fields=["deleted_at", "token_hash", "revision"])
+    session.save(
+        update_fields=["deleted_at", "token_hash", "encrypted_token", "revision"]
+    )
     Assignment.objects.filter(session=session, removed_at__isnull=True).update(
         removed_at=now, revision=F("revision") + 1
     )
@@ -152,7 +155,11 @@ def issue_link(session):
         raise ValueError("Admin coding uses SSO, not private links")
     token = secrets.token_urlsafe(32)
     active.token_hash = hashlib.sha256(token.encode()).hexdigest()
-    active.save(update_fields=["token_hash"])
+    from .private_links import link_cipher
+
+    active.encrypted_token = link_cipher().encrypt(token.encode()).decode()
+    active.save(update_fields=["token_hash", "encrypted_token"])
+    session.encrypted_token = active.encrypted_token
     session.token_hash = active.token_hash
     cancel_invitation_emails(active)
     return "/access/#" + token

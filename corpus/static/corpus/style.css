@@ -576,3 +576,5 @@ header nav { flex-wrap:wrap; }
 .logout-form{display:inline;margin:0}.logout-form button{margin:0;white-space:nowrap}.admin-coding-notice{margin:0;border-radius:0;padding:.7rem 1rem}
 
 button.study-delete-confirm{background:#b42318;border-color:#b42318;color:#fff}.study-delete-link{color:#b42318}.study-delete-warning{background:#fff4f2;border:1px solid #fda29b;color:#7a271a}
+
+[data-private-link] [hidden]{display:none!important}

@@ -230,6 +230,7 @@ class CodingSession(models.Model):
     codebook = models.JSONField()
     revision = models.PositiveIntegerField(default=0)
     token_hash = models.CharField(max_length=64, blank=True)
+    encrypted_token = models.TextField(blank=True, default="", editable=False)
 
     def __str__(self):
         return self.coder

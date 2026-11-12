@@ -472,6 +472,21 @@ def dashboard(request, study_id):
                 link = issue_link(session)
                 queue_invitation_email(session, link)
                 notice = "New private link and case list queued for " + email
+        elif action == "show_private_link":
+            from .private_links import private_link
+
+            session = get_object_or_404(
+                CodingSession,
+                study=study,
+                pk=request.POST["session"],
+                deleted_at__isnull=True,
+                admin_user__isnull=True,
+            )
+            response = JsonResponse(
+                {"url": request.build_absolute_uri(private_link(session))}
+            )
+            response["Cache-Control"] = "no-store, private"
+            return response
         elif action in ("delete_session", "delete_invitation"):
             session = get_object_or_404(
                 CodingSession, study=study, pk=request.POST["session"]
@@ -510,6 +525,7 @@ def dashboard(request, study_id):
                     notice = request.build_absolute_uri(issue_link(session))
                 else:
                     session.token_hash = ""
+                    session.encrypted_token = ""
                     session.save()
                     cancel_invitation_emails(session)
                     notice = "Private link revoked"

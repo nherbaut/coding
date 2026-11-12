@@ -134,6 +134,13 @@
       <p><small>Revokes access and removes the session from this dashboard. Coding records stay available in the archive and reports.</small></p>
     </form>
     {% if not session.admin_user_id %}
+    <form method="post" data-private-link>
+      {% csrf_token %}<input type="hidden" name="action" value="show_private_link"><input type="hidden" name="session" value="{{ session.pk }}">
+      <button class="secondary" type="submit">Show private link</button>
+      <label hidden>Private coder URL<input type="url" readonly autocomplete="off" spellcheck="false" data-private-link-url></label>
+      <button class="secondary" type="button" data-copy-private-link hidden>Copy link</button>
+      <small role="status" aria-live="polite"></small>
+    </form>
     <details class="duplicate-request"><summary>Duplicate request for another coder</summary>
       <p>Copies all current case assignments, including completed cases, with their pinned texts. The new coder starts with empty annotations and the currently published codebook and instructions.</p>
       <form method="post">{% csrf_token %}<input type="hidden" name="action" value="duplicate"><input type="hidden" name="session" value="{{ session.pk }}">
