@@ -103,7 +103,17 @@ class GitHubClient:
         self.token = token
 
     def api(self, path, method="GET", data=None):
-        return http("https://api.github.com" + path, self.token, method, data)
+        try:
+            return http("https://api.github.com" + path, self.token, method, data)
+        except GitHubError as error:
+            # Include the operation, never request bodies, credentials or URLs.
+            operation = "API"
+            if "/git/" in path:
+                operation = (
+                    "git/" + path.split("/git/", 1)[1].split("/", 1)[0].split("?", 1)[0]
+                )
+            error.args = (f"{error} [{method} {operation}]",)
+            raise
 
     def pages(self, path, key=None):
         result = []
@@ -257,24 +267,35 @@ class GitHubClient:
         return result
 
     def commit_files(self, repo, branch, head, files, message, heartbeat=lambda: None):
-        entries = []
-        for path, content in sorted(files.items()):
+        # Inline contents avoid one HTTP request per file. Bound each tree
+        # payload so a large initial corpus does not become one enormous request.
+        # Intermediate objects are unreferenced: only the final commit/ref update
+        # publishes anything, always based on the original branch head.
+        base_tree = head["tree"]
+        entries, size = [], 0
+
+        def write_tree():
             heartbeat()
-            blob = self.api(
-                f"/repos/{repo}/git/blobs",
+            return self.api(
+                f"/repos/{repo}/git/trees",
                 "POST",
-                {"content": content, "encoding": "utf-8"},
-            )
-            entries.append(dict(path=path, mode="100644", type="blob", sha=blob["sha"]))
-        tree = self.api(
-            f"/repos/{repo}/git/trees",
-            "POST",
-            {"base_tree": head["tree"], "tree": entries},
-        )
+                {"base_tree": base_tree, "tree": entries},
+            )["sha"]
+
+        for path, content in sorted(files.items()):
+            entry = dict(path=path, mode="100644", type="blob", content=content)
+            entry_size = len(json.dumps(entry).encode("utf-8")) + 2
+            if entries and size + entry_size > 512 * 1024:
+                base_tree = write_tree()
+                entries, size = [], 0
+            entries.append(entry)
+            size += entry_size
+        if entries:
+            base_tree = write_tree()
         commit = self.api(
             f"/repos/{repo}/git/commits",
             "POST",
-            {"message": message, "tree": tree["sha"], "parents": [head["sha"]]},
+            {"message": message, "tree": base_tree, "parents": [head["sha"]]},
         )
         heartbeat()
         self.api(

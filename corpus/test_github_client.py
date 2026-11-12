@@ -35,6 +35,89 @@ class GitHubClientTests(SimpleTestCase):
         tree = next(c for c in calls if "/git/trees" in c[0])
         self.assertEqual(tree[2]["base_tree"], "base")
 
+    def test_large_corpus_batches_trees_and_publishes_only_final_tree(self):
+        client = GitHubClient("token")
+        files = {f"corpus/case/{i}.md": "é😀" * 12000 for i in range(30)}
+        trees, commits, updates = [], [], []
+
+        def api(path, method="GET", data=None):
+            if path.endswith("/git/trees"):
+                trees.append(data)
+                return {"sha": f"tree-{len(trees)}"}
+            if path.endswith("/git/commits"):
+                commits.append(data)
+                return {"sha": "commit"}
+            if "/git/refs/" in path:
+                updates.append(data)
+                return {}
+            self.fail(f"Unexpected API call: {path}")
+
+        with patch.object(client, "api", side_effect=api):
+            heartbeats = []
+            client.commit_files(
+                "owner/repo",
+                "main",
+                {"sha": "parent", "tree": "base"},
+                files,
+                "Publish",
+                lambda: heartbeats.append(True),
+            )
+        self.assertGreater(len(trees), 1)
+        exported = {}
+        for index, tree in enumerate(trees):
+            self.assertEqual(
+                tree["base_tree"], "base" if index == 0 else f"tree-{index}"
+            )
+            self.assertLess(len(json.dumps(tree).encode()), 512 * 1024 + 256)
+            for entry in tree["tree"]:
+                self.assertNotIn("sha", entry)
+                exported[entry["path"]] = entry["content"]
+        self.assertEqual(exported, files)
+        self.assertEqual(
+            commits,
+            [
+                {
+                    "message": "Publish",
+                    "tree": f"tree-{len(trees)}",
+                    "parents": ["parent"],
+                }
+            ],
+        )
+        self.assertEqual(updates, [{"sha": "commit", "force": False}])
+        self.assertEqual(len(heartbeats), len(trees) + 1)
+
+    def test_failed_batch_never_updates_branch(self):
+        client = GitHubClient("token")
+        calls = []
+
+        def api(path, method="GET", data=None):
+            calls.append(path)
+            if len(calls) == 2:
+                raise GitHubError("HTTP 502", status=502)
+            return {"sha": "partial-tree"}
+
+        with patch.object(client, "api", side_effect=api):
+            with self.assertRaises(GitHubError):
+                client.commit_files(
+                    "owner/repo",
+                    "main",
+                    {"sha": "parent", "tree": "base"},
+                    {f"{i}.txt": "x" * 300000 for i in range(3)},
+                    "Publish",
+                )
+        self.assertTrue(all(path.endswith("/git/trees") for path in calls))
+
+    def test_failure_identifies_operation_without_credentials(self):
+        client = GitHubClient("private-token")
+        with patch(
+            "corpus.github_client.http", side_effect=GitHubError("HTTP 502", status=502)
+        ):
+            with self.assertRaisesMessage(GitHubError, "POST git/trees") as error:
+                client.api("/repos/owner/repo/git/trees", "POST", {"secret": "body"})
+        self.assertEqual(error.exception.status, 502)
+        self.assertNotIn("private-token", str(error.exception))
+        self.assertNotIn("secret", str(error.exception))
+
     def test_wrong_hosts_and_redirects_never_receive_token(self):
         with self.assertRaises(GitHubError):
             http("http://api.github.com/repos/x", "secret")
