@@ -126,59 +126,83 @@
   <h2>Coder sessions</h2>
   {% for session in sessions %}
   <article class="session">
-    <h3>{{ session.coder }}{% if session.admin_user_id %} · Admin coding{% endif %}</h3>
-    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_instructions"><input type="hidden" name="session" value="{{ session.pk }}"><p>{% if session.instructions_id == study.instructions_id %}Current study instructions{% else %}Earlier study instructions{% endif %}</p><button class="secondary">Update study instructions</button></form>
-    <form method="post" data-removal-confirm="Delete this coder session and remove all its assignments? Private access will be revoked. Existing coding will be retained.">
-      {% csrf_token %}<input type="hidden" name="action" value="delete_session"><input type="hidden" name="session" value="{{ session.pk }}">
-      <button class="secondary danger">Delete coder session</button>
-      <p><small>Revokes access and removes the session from this dashboard. Coding records stay available in the archive and reports.</small></p>
-    </form>
-    {% if not session.admin_user_id %}
-    <form method="post" data-private-link>
-      {% csrf_token %}<input type="hidden" name="action" value="show_private_link"><input type="hidden" name="session" value="{{ session.pk }}">
-      <button class="secondary" type="submit">Show private link</button>
-      <label hidden>Private coder URL<input type="url" readonly autocomplete="off" spellcheck="false" data-private-link-url></label>
-      <button class="secondary" type="button" data-copy-private-link hidden>Copy link</button>
-      <small role="status" aria-live="polite"></small>
-    </form>
-    <details class="duplicate-request"><summary>Duplicate request for another coder</summary>
-      <p>Copies all current case assignments, including completed cases, with their pinned texts. The new coder starts with empty annotations and the currently published codebook and instructions.</p>
-      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="duplicate"><input type="hidden" name="session" value="{{ session.pk }}">
-        <label>New coder name<input name="coder" required maxlength="200" autocomplete="name"></label>
-        <label>New coder email<input name="email" type="email" required maxlength="254" autocomplete="email"></label>
-        <button>Duplicate and send invitation</button>
-      </form>
-    </details>
-    <form method="post">
-      {% csrf_token %}<input type="hidden" name="action" value="send_invitation"><input type="hidden" name="session" value="{{ session.pk }}">
-      <label>Coder email<input name="email" type="email" maxlength="254" value="{{ session.email }}" required></label>
-      <button>Generate and email new link</button>
-      <p><small>Replaces the previous private link. Includes the cases awaiting coding.</small></p>
-      {% if session.invitation_history %}<p>Invitation email · {{ session.invitation_history.0.status }}</p>{% endif %}
-    </form>
-    <form method="post">
-      {% csrf_token %}<input
-        type="hidden"
-        name="session"
-        value="{{ session.pk }}"
-      /><button name="action" value="rotate">Generate new private link</button
-      ><button class="secondary" name="action" value="revoke">
-        Revoke link
-      </button>
-    </form>
-    <form method="post">
-      {% csrf_token %}<input type="hidden" name="action" value="assign" /><input
-        type="hidden"
-        name="session"
-        value="{{ session.pk }}"
-      /><label
-        >Add cases<select name="cases" multiple>
-          {% for case in cases %}
-          <option value="{{ case.pk }}">{{ case.name }}</option>
-          {% endfor %}
-        </select></label
-      ><button>Add assignments</button>
-    </form>{% else %}<p>SSO access only. All cases are assigned automatically when this admin opens their workspace.</p>{% endif %}
+    <div class="session-heading">
+      <div><h3>{{ session.coder }}{% if session.admin_user_id %} · Admin coding{% endif %}</h3>{% if session.email %}<p class="session-email">{{ session.email }}</p>{% endif %}</div>
+      {% if not session.admin_user_id %}<span class="session-status">{% if not session.token_hash %}Access revoked{% elif session.invitation_history %}Invitation email · {{ session.invitation_history.0.status }}{% else %}Private link created{% endif %}</span>{% endif %}
+    </div>
+    <div class="session-sections">
+      {% if not session.admin_user_id %}
+      <section class="session-panel">
+        <h4>Invitation and private link</h4>
+        <form method="post" class="session-invitation">
+          {% csrf_token %}<input type="hidden" name="action" value="send_invitation"><input type="hidden" name="session" value="{{ session.pk }}">
+          <label>Coder email<input name="email" type="email" maxlength="254" value="{{ session.email }}" required autocomplete="off"></label>
+          <button>Generate and email new link</button>
+          <p class="session-help">Sends the link and cases awaiting coding. Replaces the previous link.</p>
+        </form>
+        <div class="session-link">
+          <form method="post" data-private-link>
+            {% csrf_token %}<input type="hidden" name="action" value="show_private_link"><input type="hidden" name="session" value="{{ session.pk }}">
+            <button class="secondary" type="submit">Show private link</button>
+            <label hidden>Private coder URL<input type="url" readonly autocomplete="off" spellcheck="false" data-private-link-url></label>
+            <button class="secondary" type="button" data-copy-private-link hidden>Copy link</button>
+            <small role="status" aria-live="polite"></small>
+          </form>
+          <p class="session-help">View or copy the current link without replacing it.</p>
+        </div>
+      </section>
+      <section class="session-panel">
+        <h4>Cases and instructions</h4>
+        <form method="post">
+          {% csrf_token %}<input type="hidden" name="action" value="assign"><input type="hidden" name="session" value="{{ session.pk }}">
+          <label>Add cases<select name="cases" multiple size="5">{% for case in cases %}<option value="{{ case.pk }}">{{ case.name }}</option>{% endfor %}</select></label>
+          <button class="secondary">Add assignments</button>
+        </form>
+        <p class="session-help">Current assignments are listed in the Assignments table above.</p>
+        <div class="session-instructions">
+          <form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_instructions"><input type="hidden" name="session" value="{{ session.pk }}">
+            <p>{% if session.instructions_id == study.instructions_id %}Current study instructions{% else %}Earlier study instructions{% endif %}</p>
+            {% if session.instructions_id != study.instructions_id %}<button class="secondary">Update study instructions</button>{% endif %}
+          </form>
+        </div>
+      </section>
+      {% else %}
+      <section class="session-panel">
+        <h4>Access and instructions</h4>
+        <p>SSO access only. All cases are assigned automatically when this admin opens their workspace.</p>
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_instructions"><input type="hidden" name="session" value="{{ session.pk }}">
+          <p>{% if session.instructions_id == study.instructions_id %}Current study instructions{% else %}Earlier study instructions{% endif %}</p>
+          {% if session.instructions_id != study.instructions_id %}<button class="secondary">Update study instructions</button>{% endif %}
+        </form>
+      </section>
+      {% endif %}
+    </div>
+    <div class="session-other-actions">
+      {% if not session.admin_user_id %}
+      <details class="duplicate-request"><summary>Duplicate request for another coder</summary>
+        <p class="session-help">Copies all current assignments, including completed cases, with their pinned texts. The new coder starts with empty annotations and the published codebook and instructions.</p>
+        <form method="post" class="session-duplicate-form">{% csrf_token %}<input type="hidden" name="action" value="duplicate"><input type="hidden" name="session" value="{{ session.pk }}">
+          <label>New coder name<input name="coder" required maxlength="200" autocomplete="name"></label>
+          <label>New coder email<input name="email" type="email" required maxlength="254" autocomplete="off"></label>
+          <button>Duplicate and send invitation</button>
+        </form>
+      </details>
+      {% endif %}
+      <details class="session-sensitive"><summary>Access and session management</summary>
+        {% if not session.admin_user_id %}
+        <div class="session-sensitive-row">
+          <div><h4>Replace or revoke access</h4><p class="session-help">The previous link will stop working. Generating a link here does not send an email.</p></div>
+          <form method="post">{% csrf_token %}<input type="hidden" name="session" value="{{ session.pk }}"><button class="secondary" name="action" value="rotate">Generate new private link</button> <button class="secondary danger" name="action" value="revoke">Revoke link</button></form>
+        </div>
+        {% endif %}
+        <div class="session-sensitive-row">
+          <div><h4>Delete coder session</h4><p class="session-help">Revokes access and removes assignments from this dashboard. Coding records remain in the archive and reports.</p></div>
+          <form method="post" data-removal-confirm="Delete this coder session and remove all its assignments? Private access will be revoked. Existing coding will be retained.">
+            {% csrf_token %}<input type="hidden" name="action" value="delete_session"><input type="hidden" name="session" value="{{ session.pk }}"><button class="secondary danger">Delete coder session</button>
+          </form>
+        </div>
+      </details>
+    </div>
   </article>
   {% endfor %}
 </main>

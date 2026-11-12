@@ -277,14 +277,8 @@ aside {
 .warning {
   color: #945629;
 }
-.session form {
-  display: inline-block;
-  vertical-align: top;
-  margin-right: 20px;
-}
-.session select {
-  min-width: 250px;
-}
+.session form { display: block; margin: 0; }
+.session select { min-width: 0; }
 dialog {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -578,3 +572,39 @@ header nav { flex-wrap:wrap; }
 button.study-delete-confirm{background:#b42318;border-color:#b42318;color:#fff}.study-delete-link{color:#b42318}.study-delete-warning{background:#fff4f2;border:1px solid #fda29b;color:#7a271a}
 
 [data-private-link] [hidden]{display:none!important}
+
+/* Coder invitation cards: identity, everyday actions, then optional management. */
+.session { padding: 0; overflow: hidden; }
+.session-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:22px 24px; border-bottom:1px solid var(--line); }
+.session-heading h3 { margin:0; overflow-wrap:anywhere; }
+.session-email { margin:5px 0 0; color:#53635a; overflow-wrap:anywhere; }
+.session-status { border-radius:20px; padding:5px 10px; background:#edf3ee; color:#365c48; font-size:12px; flex-shrink:0; }
+.session-sections { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+.session-panel { padding:22px 24px; min-width:0; }
+.session-panel:only-child { grid-column:1 / -1; }
+.session-panel + .session-panel { border-left:1px solid var(--line); }
+.session h4 { font-size:14px; margin:0 0 14px; }
+.session-panel label { margin-top:0; }
+.session-help { color:#647068; font-size:12px; line-height:1.6; margin:9px 0 0; }
+.session-link, .session-instructions { margin-top:20px; padding-top:18px; border-top:1px solid var(--line); }
+.session-instructions p { margin:0; color:#53635a; font-size:13px; }
+.session-instructions button { margin-top:10px; }
+.session-link [role="status"] { display:block; margin-top:8px; overflow-wrap:anywhere; }
+.session-link label { margin-top:14px; }
+.session-other-actions { border-top:1px solid var(--line); padding:0 24px; background:#fbfcfa; }
+.session-other-actions details { padding:15px 0; }
+.session-other-actions details + details { border-top:1px solid var(--line); }
+.session-other-actions summary { cursor:pointer; color:var(--green); font-weight:500; }
+.session-duplicate-form { max-width:620px; padding-top:16px; }
+.session-sensitive-row { display:flex; gap:24px; align-items:center; justify-content:space-between; padding:20px 0 4px; }
+.session-sensitive-row + .session-sensitive-row { margin-top:18px; padding-top:20px; border-top:1px solid var(--line); }
+.session-sensitive-row h4 { margin-bottom:0; }
+.session-sensitive-row form { flex-shrink:0; }
+.session-sensitive-row button { margin-top:6px; }
+@media (max-width:760px) {
+  .session-heading { flex-direction:column; }
+  .session-sections { grid-template-columns:minmax(0,1fr); }
+  .session-panel:only-child { grid-column:1 / -1; }
+.session-panel + .session-panel { border-left:0; border-top:1px solid var(--line); }
+  .session-sensitive-row { flex-direction:column; align-items:stretch; gap:12px; }
+}

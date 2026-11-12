@@ -40,7 +40,14 @@ class PrivateLinksBrowserTests(StaticLiveServerTestCase):
                 page.evaluate("navigator.clipboard.readText()"),
                 self.live_server_url + data["link"],
             )
-            page.screenshot(path="/tmp/coding-private-link.png", full_page=True)
+            self.assertFalse(panel.get_by_role("button", name="Delete coder session", exact=True).is_visible())
+            panel.screenshot(path="/tmp/coding-invitation-desktop.png")
+            page.set_viewport_size({"width": 390, "height": 844})
+            panel.screenshot(path="/tmp/coding-invitation-mobile.png")
+            self.assertLessEqual(panel.bounding_box()["width"], 390)
+            panel.get_by_text("Access and session management", exact=True).click()
+            self.assertTrue(panel.get_by_role("button", name="Delete coder session", exact=True).is_visible())
+            page.set_viewport_size({"width": 1280, "height": 900})
             coder = browser.new_context()
             coder_page = coder.new_page()
             coder_page.goto(field.input_value())
