@@ -121,7 +121,7 @@ class ZipValidationTests(SimpleTestCase):
         with self.assertRaisesMessage(ValueError, "100 documents"):
             read_uploads([archive([(f"{n}.txt", b"x") for n in range(101)])], "")
         with patch("corpus.upload_files.MAX_ZIP_ENTRIES", 2):
-            with self.assertRaisesMessage(ValueError, "1000 entries"):
+            with self.assertRaisesMessage(ValueError, "2 entries"):
                 read_uploads(
                     [archive([("a/", b""), ("b/", b""), ("a/c.txt", b"text")])], ""
                 )

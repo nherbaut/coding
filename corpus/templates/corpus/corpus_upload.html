@@ -1,9 +1,13 @@
 {% extends 'corpus/base.html' %}{% block content %}<main class="dashboard corpus-upload">
 <h1>{{ study.title }} · Upload corpus files</h1>{% include 'corpus/study_navigation.html' %}
-<p class="upload-steps">1. Choose files and case <span aria-hidden="true">→</span> 2. Review and import <span aria-hidden="true">→</span> 3. Assign to coders</p>
+<p class="upload-steps">1. Choose an import mode <span aria-hidden="true">→</span> 2. Review and import <span aria-hidden="true">→</span> 3. Assign to coders</p>
 {% if error %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
 {% if not batch %}
-<article><h2>1. Choose files and case</h2><p>Add new UTF-8 Markdown or plain text documents, individually or in ZIP archives. Existing texts and coding will not be replaced.</p>
+<article><h2>Import multiple cases from ZIP</h2><p>Upload a ZIP with one folder per case, or a version 1 corpus manifest. Cases are detected automatically; no case name is required.</p>
+<form method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="preview_cases">
+<label>Cases ZIP<input type="file" name="files" accept=".zip" required></label><p class="session-help">Up to 500 new cases, 2,000 documents and 100 MB uncompressed. Existing case names are rejected; nothing is replaced. A manifest preserves case and document metadata.</p>
+<label>Notes for imported documents<textarea name="notes" maxlength="10000" rows="2"></textarea></label><button>Preview cases</button></form></article>
+<article><h2>Add files to one case</h2><p>Add new UTF-8 Markdown or plain text documents, individually or in ZIP archives. Existing texts and coding will not be replaced.</p>
 <form method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="preview">
 <label>Files<input type="file" name="files" accept=".md,.markdown,.txt,.zip" multiple required></label><p class="session-help">Up to 100 documents and 20 MB per import, including uncompressed ZIP contents. File contents and line endings are preserved.</p>
 <p class="session-help">ZIP folders are grouped into the selected case. Original paths are kept in document metadata. Duplicate names or invalid files reject the entire batch; macOS service files are ignored. No manifest is required.</p>
@@ -12,6 +16,8 @@
 <label>Document notes (optional)<textarea name="notes" maxlength="10000" rows="3"></textarea></label>
 <button>Preview import</button> <a href="{% url 'study-corpus' study.pk %}">Cancel</a></form></article>
 {% if recent %}<h2>Your recent uploads</h2><ul>{% for item in recent %}<li><a href="{% url 'corpus-upload-batch' study.pk item.pk %}">{{ item.data.case.name }} · {{ item.data.files|length }} file{{ item.data.files|length|pluralize }}</a> · {% if item.committed_at %}Imported{% else %}Preview{% endif %} · {{ item.created }}</li>{% endfor %}</ul>{% endif %}
+{% elif batch.data.mode == 'cases' %}
+{% include 'corpus/case_upload.html' %}
 {% elif not batch.committed_at %}
 <h2>2. Review and import</h2><p>Case: <strong>{{ batch.data.case.name }}</strong>{% if not batch.data.case.id %} (new case){% endif %} · {{ batch.data.files|length }} file{{ batch.data.files|length|pluralize }}</p>
 <p>Confirm to add these files to the corpus. No coder assignments are changed at this step.{% if study.github %} The files and their metadata will be queued for GitHub publication.{% endif %}</p>

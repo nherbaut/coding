@@ -1,0 +1,14 @@
+{% if not batch.committed_at %}
+<h2>2. Review cases</h2><p><strong>{{ batch.data.groups|length }} new cases · {{ batch.data.files|length }} documents</strong></p><p>Confirm to create all these cases together. Existing cases, coding, codebooks and assignments remain unchanged. No coder receives these cases automatically.</p>
+{% if expired %}<p class="notice error">This preview has expired. Upload the archive again.</p>{% endif %}
+{% for group in case_groups %}<article><h3>{{ group.case.name }}</h3><p>{{ group.files|length }} document{{ group.files|length|pluralize }}</p><details><summary>View documents</summary><ul>{% for file in group.files %}<li>{{ file.name }} · {{ file.bytes|filesizeformat }}<details><summary>Preview text</summary><pre>{{ file.text|slice:':1200' }}</pre></details></li>{% empty %}<li>This case has no documents.</li>{% endfor %}</ul></details></article>{% endfor %}
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><button {% if expired %}disabled{% endif %}>Confirm case import</button></form>
+<form method="post" class="upload-cancel">{% csrf_token %}<input type="hidden" name="action" value="cancel"><button class="secondary">Cancel upload</button></form>
+{% else %}
+<h2>3. Assign imported cases</h2><p><strong>{{ batch.data.receipts|length }} cases and {{ batch.data.files|length }} documents imported.</strong> Existing coding and assignments were preserved.</p>
+{% if study.github %}<p>GitHub publication is queued automatically. <a href="{% url 'github-status' study.pk %}">View synchronization status</a>.</p>{% endif %}
+<article><h3>Assign all new cases to selected coders</h3><p>This explicitly adds every case in this batch. Use the links below to assign individual cases instead. Submitted assignments must be reopened before adding texts.</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="assign_cases"><div class="upload-coders">{% for coder in batch_coders %}<label><input type="checkbox" name="sessions" value="{{ coder.pk }}">{{ coder.coder }}{% if coder.admin_user_id %} · Admin coding{% endif %}</label>{% empty %}<p>Create a coder session from the study overview to assign these cases.</p>{% endfor %}</div><button>Assign all imported cases</button></form></article>
+<table><thead><tr><th>Case</th><th>Documents</th><th>Individual assignment</th></tr></thead><tbody>{% for item in batch.data.receipts %}<tr><td>{{ item.case.name }}</td><td>{{ item.count }}</td><td><a href="{% url 'corpus-upload-batch' study.pk item.batch %}">Assign this case</a></td></tr>{% endfor %}</tbody></table>
+<p><a href="{% url 'study-corpus' study.pk %}">Back to corpus</a> · <a href="{% url 'corpus-upload' study.pk %}">Upload more cases</a></p>
+{% endif %}

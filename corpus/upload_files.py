@@ -36,15 +36,29 @@ def valid_name(name):
     return name
 
 
-def zip_members(raw, archive_name):
+def zip_members(
+    raw,
+    archive_name,
+    *,
+    max_files=None,
+    max_entries=None,
+    max_bytes=None,
+    allow_manifest=False,
+):
+    file_limit = MAX_FILES if max_files is None else max_files
+    entry_limit = MAX_ZIP_ENTRIES if max_entries is None else max_entries
+    byte_limit = MAX_BYTES if max_bytes is None else max_bytes
+    limit_label = "20 MB" if max_bytes is None else f"{byte_limit // (1024 * 1024)} MB"
     try:
         with zipfile.ZipFile(io.BytesIO(raw)) as archive:
             infos = archive.infolist()
-            if len(infos) > MAX_ZIP_ENTRIES:
-                raise ValueError("ZIP archives must not contain more than 1000 entries")
-            if sum(i.file_size for i in infos) > MAX_BYTES:
+            if len(infos) > entry_limit:
                 raise ValueError(
-                    "Uncompressed ZIP contents exceed the 20 MB import limit"
+                    f"ZIP archives must not contain more than {entry_limit} entries"
+                )
+            if sum(i.file_size for i in infos) > byte_limit:
+                raise ValueError(
+                    f"Uncompressed ZIP contents exceed the {limit_label} import limit"
                 )
             members = []
             for info in infos:
@@ -74,21 +88,25 @@ def zip_members(raw, archive_name):
                     or parts[-1].startswith("._")
                 ):
                     continue
-                name = valid_name(parts[-1])
+                name = (
+                    parts[-1]
+                    if allow_manifest and path == "manifest.yaml"
+                    else valid_name(parts[-1])
+                )
                 members.append((info, name))
-            if len(members) > MAX_FILES:
+            if len(members) > file_limit:
                 raise ValueError(
-                    "An upload batch must not contain more than 100 documents"
+                    f"An upload batch must not contain more than {file_limit} documents"
                 )
             archive_hash = hashlib.sha256(raw).hexdigest()
             total = 0
             for info, name in members:
                 with archive.open(info) as stream:
-                    content = stream.read(MAX_BYTES - total + 1)
+                    content = stream.read(byte_limit - total + 1)
                 total += len(content)
-                if total > MAX_BYTES:
+                if total > byte_limit:
                     raise ValueError(
-                        "Uncompressed ZIP contents exceed the 20 MB import limit"
+                        f"Uncompressed ZIP contents exceed the {limit_label} import limit"
                     )
                 if len(content) != info.file_size:
                     raise ValueError("ZIP file size does not match its directory")

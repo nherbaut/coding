@@ -17,8 +17,10 @@ from .studies import get_study
 
 from .upload_files import MAX_FILES, valid_name, read_uploads
 
+AUTO_BINDING = object()
 
-def check_names(study, case_id, names):
+
+def check_names(study, case_id, names, storage_names=None):
     existing = (
         list(
             m.Document.objects.filter(study=study, cases__pk=case_id).values_list(
@@ -30,14 +32,21 @@ def check_names(study, case_id, names):
     )
     used = {name.casefold() for name in existing}
     for name in names:
-        valid_name(name)
+        if storage_names:
+            safe_path(name)
+            if not name.strip() or len(name) > 500 or any(ord(c) < 32 for c in name):
+                raise ValueError("Invalid document title in manifest")
+        else:
+            valid_name(name)
         if name.casefold() in used:
             raise ValueError(
                 f"A document named {name} already exists in this case or upload. Rename the new file; existing texts are never replaced."
             )
         used.add(name.casefold())
     # Reserve each sibling .coding directory even for studies not yet on GitHub.
-    corpus_paths({f"corpus/case/{name}": "" for name in existing + names})
+    corpus_paths(
+        {f"corpus/case/{name}": "" for name in existing + (storage_names or names)}
+    )
 
 
 def preview_upload(study, user, uploads, case_id="", new_case="", notes=""):
@@ -78,7 +87,7 @@ def preview_upload(study, user, uploads, case_id="", new_case="", notes=""):
 
 
 @transaction.atomic
-def commit_upload(batch_id, study_id, user, metadata):
+def commit_upload(batch_id, study_id, user, metadata, *, _binding=AUTO_BINDING):
     study = m.Study.objects.select_for_update().get(pk=study_id)
     get_study(user, study.pk)
     batch = get_object_or_404(
@@ -95,6 +104,8 @@ def commit_upload(batch_id, study_id, user, metadata):
     if len(metadata) != len(data["files"]):
         raise ValueError("Document metadata does not match the preview")
     for item in metadata:
+        if not isinstance(item["url"], str) or not isinstance(item["notes"], str):
+            raise ValueError("Source URLs and notes must be text")
         if item["url"]:
             URLValidator(schemes=["https", "http"])(item["url"])
         if len(item["url"]) > 2000 or len(item["notes"]) > 10000:
@@ -109,12 +120,29 @@ def commit_upload(batch_id, study_id, user, metadata):
         raise Conflict(
             "A case with this name was created after the preview. Upload again and select that case."
         )
-    check_names(study, target["id"], [f["name"] for f in data["files"]])
-    binding = m.GitHubStudy.objects.select_for_update().filter(study=study).first()
+    check_names(
+        study,
+        target["id"],
+        [f["name"] for f in data["files"]],
+        (
+            [f.get("storage_name", f["name"]) for f in data["files"]]
+            if any("storage_name" in f for f in data["files"])
+            else None
+        ),
+    )
+    binding = (
+        m.GitHubStudy.objects.select_for_update().filter(study=study).first()
+        if _binding is AUTO_BINDING
+        else _binding
+    )
     new_paths = {}
     if binding:
         for item in data["files"]:
-            path = str(safe_path(f"corpus/{target['key']}/{item['name']}"))
+            path = str(
+                safe_path(
+                    f"corpus/{target['key']}/{item.get('storage_name', item['name'])}"
+                )
+            )
             if len(path) > 500:
                 raise ValueError("The repository path is too long")
             new_paths[item["name"]] = path
@@ -126,7 +154,10 @@ def commit_upload(batch_id, study_id, user, metadata):
     with append_scope(study.pk):
         if not case:
             case = m.Case.objects.create(
-                study=study, key=target["key"], name=target["name"]
+                study=study,
+                key=target["key"],
+                name=target["name"],
+                metadata=target.get("metadata", {}),
             )
         for item, details in zip(data["files"], metadata):
             details = {**item["metadata"], **details}
@@ -155,7 +186,7 @@ def commit_upload(batch_id, study_id, user, metadata):
                     hash=version.sha256,
                     metadata=details,
                 )
-    if binding:
+    if binding and _binding is AUTO_BINDING:
         binding.save(update_fields=["initial_files", "document_paths"])
         from .github_sync import record_event
 

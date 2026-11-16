@@ -9,6 +9,7 @@ from .permissions import admin_required
 from .studies import get_study
 from .models import CorpusUploadBatch, CodingSession, Assignment
 from .services import Conflict
+from .case_uploads import preview_cases, commit_cases, assign_cases
 from .corpus_uploads import preview_upload, commit_upload, assign_upload, cancel_upload
 
 
@@ -27,7 +28,36 @@ def upload(request, study_id, batch_id=None):
     if request.method == "POST":
         try:
             action = request.POST.get("action")
-            if action == "preview" and batch is None:
+            if action == "preview_cases" and batch is None:
+                batch = preview_cases(
+                    study,
+                    request.user,
+                    request.FILES.getlist("files"),
+                    request.POST.get("notes", ""),
+                )
+                return redirect(
+                    "corpus-upload-batch", study_id=study.pk, batch_id=batch.pk
+                )
+            elif action == "assign_cases" and batch and batch.committed_at:
+                count = assign_cases(
+                    batch.pk, study.pk, request.user, request.POST.getlist("sessions")
+                )
+                messages.success(
+                    request, f"New cases added to {count} coder assignment(s)."
+                )
+                return redirect(
+                    "corpus-upload-batch", study_id=study.pk, batch_id=batch.pk
+                )
+            elif action == "confirm" and batch and batch.data.get("mode") == "cases":
+                batch = commit_cases(batch.pk, study.pk, request.user)
+                messages.success(
+                    request,
+                    "Cases imported. Existing coding and assignments were preserved.",
+                )
+                return redirect(
+                    "corpus-upload-batch", study_id=study.pk, batch_id=batch.pk
+                )
+            elif action == "preview" and batch is None:
                 batch = preview_upload(
                     study,
                     request.user,
@@ -82,7 +112,7 @@ def upload(request, study_id, batch_id=None):
                 else str(exc)
             ), 400
     coders = []
-    if batch and batch.committed_at:
+    if batch and batch.committed_at and batch.data.get("mode") != "cases":
         assignments = {
             a.session_id: a
             for a in Assignment.objects.filter(
@@ -116,9 +146,25 @@ def upload(request, study_id, batch_id=None):
             error=error,
             coders=coders,
             cases=study.cases.order_by(Lower("name"), "pk"),
-            recent=study.corpus_uploads.filter(created_by=request.user).order_by(
-                "-created"
-            )[:10],
+            case_groups=(
+                [
+                    dict(
+                        case=g["case"],
+                        files=[batch.data["files"][i] for i in g["indices"]],
+                    )
+                    for g in batch.data["groups"]
+                ]
+                if batch
+                and batch.data.get("mode") == "cases"
+                and not batch.committed_at
+                else []
+            ),
+            batch_coders=study.coder_sessions.filter(deleted_at__isnull=True).order_by(
+                Lower("coder"), "pk"
+            ),
+            recent=study.corpus_uploads.filter(created_by=request.user)
+            .exclude(data__has_key="parent_batch")
+            .order_by("-created")[:10],
             expired=bool(
                 batch
                 and not batch.committed_at
