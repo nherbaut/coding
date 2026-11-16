@@ -163,6 +163,16 @@ def export_files(binding):
         pk=binding.study_id
     )
     files = deepcopy(binding.initial_files)
+    versions = DocumentVersion.objects.filter(
+        document__study_id=binding.study_id, pk__in=binding.document_paths.keys()
+    )
+    if versions.count() != len(binding.document_paths):
+        raise ValueError("Corpus export references a missing document version")
+    for version in versions:
+        doc = binding.document_paths[str(version.pk)]
+        if version.sha256 != doc["hash"]:
+            raise ValueError("Corpus version differs from its export metadata")
+        files[doc["path"]] = version.text
     base, initial, history = replay_codebook(files)
     files.setdefault("codebook/codebook-base.yaml", dump(base))
     current = deepcopy(initial)
@@ -460,7 +470,17 @@ def publish_run(binding, run, client):
         if path in source_paths
     }
     desired = {path: blob_sha(content) for path, content in run.files.items()}
-    complete = actual_corpus == binding.corpus_blobs and all(
+    expected_corpus = {
+        **binding.corpus_blobs,
+        **{
+            path: {
+                "sha": desired[path],
+                "mode": binding.corpus_blobs.get(path, {}).get("mode", "100644"),
+            }
+            for path in corpus_paths(run.files)
+        },
+    }
+    complete = actual_corpus == expected_corpus and all(
         tree.get(path, {}).get("sha") == sha for path, sha in desired.items()
     )
     if binding.bootstrap_pending and not complete:
@@ -473,7 +493,7 @@ def publish_run(binding, run, client):
                 "Repository data appeared after the upload preview; no files were overwritten",
                 conflict=True,
             )
-    elif actual_corpus != binding.corpus_blobs:
+    elif actual_corpus != binding.corpus_blobs and not complete:
         raise GitHubError(
             "Frozen corpus changed in GitHub; restore the imported files before retrying",
             conflict=True,
@@ -550,6 +570,15 @@ def synchronize_next(*, force=False, client_factory=installation_client):
             if active.lease_token != binding.lease_token:
                 raise LeaseLost("Synchronization lease was replaced")
             active.managed_blobs.update(desired)
+            active.corpus_blobs.update(
+                {
+                    path: {
+                        "sha": desired[path],
+                        "mode": active.corpus_blobs.get(path, {}).get("mode", "100644"),
+                    }
+                    for path in corpus_paths(run.files)
+                }
+            )
             active.last_commit = commit
             active.bootstrap_pending = False
             GitHubEvent.objects.filter(binding=active, pk__in=run.event_ids).update(
@@ -561,6 +590,7 @@ def synchronize_next(*, force=False, client_factory=installation_client):
             active.save(
                 update_fields=[
                     "managed_blobs",
+                    "corpus_blobs",
                     "last_commit",
                     "bootstrap_pending",
                     "last_error",
@@ -613,5 +643,9 @@ def synchronize_next(*, force=False, client_factory=installation_client):
 
 
 def require_mutable_corpus(study_id):
+    from .corpus_scope import appending_to
+
+    if appending_to(study_id):
+        return
     if GitHubStudy.objects.filter(study_id=study_id).exists():
         raise ValueError("This study's corpus is frozen at its initial GitHub commit")

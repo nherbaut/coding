@@ -178,3 +178,13 @@ Deletion runs atomically and refuses active email/GitHub deliveries or locked co
 Study admins can use **Coder sessions → Show private link → Copy link** to retrieve a coder's active invitation URL without replacing it. Private tokens are stored encrypted using a purpose-specific key derived from `DJANGO_SECRET_KEY`; authentication continues to use token hashes. Revealing a link requires authenticated study access and a CSRF-protected POST, and its response is not cached. Revocation, rotation and session deletion invalidate or clear the stored token; no tokens are exported to GitHub. Keep the server secret stable and include it in protected deployment backups.
 
 Previously issued links that have no encrypted token remain valid but cannot be reconstructed from their hashes. The interface explains this and lets the admin explicitly generate a new link; no link is rotated automatically.
+
+## Add new corpus files
+
+In a study, choose **Cases and texts → Upload new files** (also linked from the overview). Upload UTF-8 `.md`, `.markdown`, or `.txt` files, select an existing case or name a new one, then review the text previews and optional source URLs/notes before confirming. A batch accepts up to 100 files and 20 MB. Imports preserve exact text, Unicode and line endings, and never replace an existing document. Duplicate file names and `.coding` directory collisions are rejected. Each confirmation is atomic and repeat-safe.
+
+After import, explicitly choose which coders receive the new texts. Existing assignments keep their pinned documents and annotations; selected open assignments gain the additional versions and a new revision so stale browser edits conflict. Submitted cases require explicit reopening before receiving new texts. A new case assignment includes the whole case. Unselected sessions and submitted snapshots remain unchanged.
+
+For GitHub studies, approved uploads append new repository paths, metadata and a `corpus-added` event in the same database transaction. The worker publishes these files with the manifest in one commit. Existing corpus contents remain immutable; external corpus edits still block synchronization. The expected published corpus advances only when its durable snapshot is published. Recovering a lost response does not create another commit, including when later uploads are waiting.
+
+Previews are private to the uploading study admin and expire after one hour. Imported batch receipts remain available under **Your recent uploads** for later assignment. The GitHub worker removes expired previews; without that worker, schedule `python manage.py prune_corpus_uploads`. Source corpus files, existing annotations and submitted snapshots are preserved.

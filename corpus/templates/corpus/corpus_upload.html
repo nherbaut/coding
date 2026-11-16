@@ -1,0 +1,33 @@
+{% extends 'corpus/base.html' %}{% block content %}<main class="dashboard corpus-upload">
+<h1>{{ study.title }} · Upload corpus files</h1>{% include 'corpus/study_navigation.html' %}
+<p class="upload-steps">1. Choose files and case <span aria-hidden="true">→</span> 2. Review and import <span aria-hidden="true">→</span> 3. Assign to coders</p>
+{% if error %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
+{% if not batch %}
+<article><h2>1. Choose files and case</h2><p>Add new UTF-8 Markdown or plain text documents. Existing texts and coding will not be replaced.</p>
+<form method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="preview">
+<label>Files<input type="file" name="files" accept=".md,.markdown,.txt" multiple required></label><p class="session-help">Up to 100 files and 20 MB per import. File contents and line endings are preserved.</p>
+<label for="upload-case">Existing case</label><select id="upload-case" name="case"><option value="">Create a new case below</option>{% for case in cases %}<option value="{{ case.pk }}">{{ case.name }}</option>{% endfor %}</select>
+<label>New case name<input name="new_case" maxlength="500"></label><p class="session-help">Choose an existing case or enter a new name.</p>
+<label>Document notes (optional)<textarea name="notes" maxlength="10000" rows="3"></textarea></label>
+<button>Preview import</button> <a href="{% url 'study-corpus' study.pk %}">Cancel</a></form></article>
+{% if recent %}<h2>Your recent uploads</h2><ul>{% for item in recent %}<li><a href="{% url 'corpus-upload-batch' study.pk item.pk %}">{{ item.data.case.name }} · {{ item.data.files|length }} file{{ item.data.files|length|pluralize }}</a> · {% if item.committed_at %}Imported{% else %}Preview{% endif %} · {{ item.created }}</li>{% endfor %}</ul>{% endif %}
+{% elif not batch.committed_at %}
+<h2>2. Review and import</h2><p>Case: <strong>{{ batch.data.case.name }}</strong>{% if not batch.data.case.id %} (new case){% endif %} · {{ batch.data.files|length }} file{{ batch.data.files|length|pluralize }}</p>
+<p>Confirm to add these files to the corpus. No coder assignments are changed at this step.{% if study.github %} The files and their metadata will be queued for GitHub publication.{% endif %}</p>
+{% if expired %}<p class="notice error">This preview has expired. Upload the files again.</p>{% endif %}
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm">
+{% for file in batch.data.files %}<article><h3>{{ file.name }}</h3><p class="session-help">{{ file.bytes|filesizeformat }} · New document</p><details><summary>Preview text</summary><pre>{{ file.text|slice:':1200' }}</pre></details>
+<label>Source URL for {{ file.name }}<input type="url" name="url_{{ forloop.counter0 }}" maxlength="2000" value="{{ file.metadata.url }}"></label>
+<label>Notes for {{ file.name }}<textarea name="notes_{{ forloop.counter0 }}" maxlength="10000" rows="2">{{ file.metadata.notes }}</textarea></label></article>{% endfor %}
+<button {% if expired %}disabled{% endif %}>Confirm import</button></form>
+<form method="post" class="upload-cancel">{% csrf_token %}<input type="hidden" name="action" value="cancel"><button class="secondary">Cancel upload</button></form>
+{% else %}
+<h2>3. Assign to coders</h2><p><strong>{{ batch.data.files|length }} file{{ batch.data.files|length|pluralize }} imported into {{ batch.data.case.name }}.</strong> Existing assignments and submissions were preserved.</p>
+<ul>{% for file in batch.data.files %}<li>{{ file.name }}</li>{% endfor %}</ul>
+{% if study.github %}<p>GitHub publication is queued automatically. <a href="{% url 'github-status' study.pk %}">View synchronization status</a>.</p>{% endif %}
+<article><h3>Add these texts to coding assignments</h3><p>Select the coders who should receive these new texts. A coder already assigned this case keeps all previously pinned versions and annotations. A new assignment includes the entire case. Submitted cases must be reopened explicitly first.</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="assign"><div class="upload-coders">
+{% for item in coders %}<label><input type="checkbox" name="sessions" value="{{ item.session.pk }}" {% if item.submitted or item.included %}disabled{% endif %}>{{ item.session.coder }}{% if item.session.admin_user_id %} · Admin coding{% endif %} · {% if item.submitted %}Submitted — reopen first{% elif item.included %}Already includes these texts{% else %}Available{% endif %}</label>{% empty %}<p>No coder sessions yet. Create one from the study overview to assign this case.</p>{% endfor %}</div>
+{% if coders %}<button>Add texts to selected coders</button>{% endif %}</form></article>
+<p><a href="{% url 'study-corpus' study.pk %}">Back to corpus</a> · <a href="{% url 'corpus-upload' study.pk %}">Upload more files</a></p>
+{% endif %}</main>{% endblock %}

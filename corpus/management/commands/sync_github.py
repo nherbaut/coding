@@ -6,6 +6,7 @@ from django.core.management.base import BaseCommand
 from django.db import close_old_connections, OperationalError, ProgrammingError
 from corpus.github_sync import synchronize_next
 from corpus.models import GitHubImportDraft
+from .prune_corpus_uploads import prune
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ class Command(BaseCommand):
         while not stop.is_set():
             try:
                 close_old_connections()
+                prune()
                 GitHubImportDraft.objects.filter(
                     created__lt=timezone.now() - datetime.timedelta(hours=1)
                 ).delete()

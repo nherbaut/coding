@@ -1,7 +1,7 @@
 from django.contrib.auth.views import LoginView
 from corpus import admin_tools, github_views
 from django.urls import path, include
-from corpus import views, study_views
+from corpus import views, study_views, upload_views
 from corpus.reporting_views import coding_report
 
 study_urls = [
@@ -34,6 +34,12 @@ study_urls = [
     path("settings/", study_views.study_settings, name="study-settings"),
     path("protocol/", study_views.study_protocol, name="study-protocol"),
     path("corpus/", study_views.study_corpus, name="study-corpus"),
+    path("corpus/upload/", upload_views.upload, name="corpus-upload"),
+    path(
+        "corpus/upload/<uuid:batch_id>/",
+        upload_views.upload,
+        name="corpus-upload-batch",
+    ),
     path("archive/", views.coding_archive, name="coding-archive"),
     path("reports/", coding_report, name="coding-report"),
     path("reports/<uuid:report_id>/", coding_report, name="saved-report"),
