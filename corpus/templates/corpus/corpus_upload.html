@@ -3,9 +3,10 @@
 <p class="upload-steps">1. Choose files and case <span aria-hidden="true">→</span> 2. Review and import <span aria-hidden="true">→</span> 3. Assign to coders</p>
 {% if error %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
 {% if not batch %}
-<article><h2>1. Choose files and case</h2><p>Add new UTF-8 Markdown or plain text documents. Existing texts and coding will not be replaced.</p>
+<article><h2>1. Choose files and case</h2><p>Add new UTF-8 Markdown or plain text documents, individually or in ZIP archives. Existing texts and coding will not be replaced.</p>
 <form method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="preview">
-<label>Files<input type="file" name="files" accept=".md,.markdown,.txt" multiple required></label><p class="session-help">Up to 100 files and 20 MB per import. File contents and line endings are preserved.</p>
+<label>Files<input type="file" name="files" accept=".md,.markdown,.txt,.zip" multiple required></label><p class="session-help">Up to 100 documents and 20 MB per import, including uncompressed ZIP contents. File contents and line endings are preserved.</p>
+<p class="session-help">ZIP folders are grouped into the selected case. Original paths are kept in document metadata. Duplicate names or invalid files reject the entire batch; macOS service files are ignored. No manifest is required.</p>
 <label for="upload-case">Existing case</label><select id="upload-case" name="case"><option value="">Create a new case below</option>{% for case in cases %}<option value="{{ case.pk }}">{{ case.name }}</option>{% endfor %}</select>
 <label>New case name<input name="new_case" maxlength="500"></label><p class="session-help">Choose an existing case or enter a new name.</p>
 <label>Document notes (optional)<textarea name="notes" maxlength="10000" rows="3"></textarea></label>
@@ -16,7 +17,7 @@
 <p>Confirm to add these files to the corpus. No coder assignments are changed at this step.{% if study.github %} The files and their metadata will be queued for GitHub publication.{% endif %}</p>
 {% if expired %}<p class="notice error">This preview has expired. Upload the files again.</p>{% endif %}
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm">
-{% for file in batch.data.files %}<article><h3>{{ file.name }}</h3><p class="session-help">{{ file.bytes|filesizeformat }} · New document</p><details><summary>Preview text</summary><pre>{{ file.text|slice:':1200' }}</pre></details>
+{% for file in batch.data.files %}<article><h3>{{ file.name }}</h3><p class="session-help">{{ file.bytes|filesizeformat }} · New document{% if file.metadata.source_archive %} · From {{ file.metadata.source_archive.name }} / {{ file.metadata.source_archive.member }}{% endif %}</p><details><summary>Preview text</summary><pre>{{ file.text|slice:':1200' }}</pre></details>
 <label>Source URL for {{ file.name }}<input type="url" name="url_{{ forloop.counter0 }}" maxlength="2000" value="{{ file.metadata.url }}"></label>
 <label>Notes for {{ file.name }}<textarea name="notes_{{ forloop.counter0 }}" maxlength="10000" rows="2">{{ file.metadata.notes }}</textarea></label></article>{% endfor %}
 <button {% if expired %}disabled{% endif %}>Confirm import</button></form>

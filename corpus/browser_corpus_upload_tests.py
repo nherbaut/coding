@@ -8,6 +8,12 @@ from .models import DocumentVersion, Annotation
 
 class CorpusUploadBrowserTests(StaticLiveServerTestCase):
     def test_preview_import_then_explicit_assignment(self):
+        self.workflow(zip_mode=False)
+
+    def test_zip_preview_import_then_explicit_assignment(self):
+        self.workflow(zip_mode=True)
+
+    def workflow(self, zip_mode):
         from playwright.sync_api import sync_playwright
 
         data = report_fixture()
@@ -27,20 +33,37 @@ class CorpusUploadBrowserTests(StaticLiveServerTestCase):
             page.get_by_label("Username:", exact=True).fill("report-admin")
             page.get_by_label("Password:", exact=True).fill("test-password")
             page.get_by_role("button", name="Log in", exact=True).click()
-            page.get_by_label("Files", exact=True).set_input_files(
-                [
+            if zip_mode:
+                from .test_corpus_zip import archive
+
+                source = archive(
+                    [
+                        ("nested/extra.md", "# Policy\r\nA😀 review\r\n".encode()),
+                        ("notes.txt", b"Additional evidence\n"),
+                    ]
+                )
+                page.get_by_label("Files", exact=True).set_input_files(
                     {
-                        "name": "extra.md",
-                        "mimeType": "text/markdown",
-                        "buffer": "# Policy\r\nA😀 review\r\n".encode(),
-                    },
-                    {
-                        "name": "notes.txt",
-                        "mimeType": "text/plain",
-                        "buffer": b"Additional evidence\n",
-                    },
-                ]
-            )
+                        "name": "corpus.zip",
+                        "mimeType": "application/zip",
+                        "buffer": source.read(),
+                    }
+                )
+            else:
+                page.get_by_label("Files", exact=True).set_input_files(
+                    [
+                        {
+                            "name": "extra.md",
+                            "mimeType": "text/markdown",
+                            "buffer": "# Policy\r\nA😀 review\r\n".encode(),
+                        },
+                        {
+                            "name": "notes.txt",
+                            "mimeType": "text/plain",
+                            "buffer": b"Additional evidence\n",
+                        },
+                    ]
+                )
             page.get_by_label("Existing case", exact=True).select_option(
                 str(data["case"].pk)
             )
@@ -51,6 +74,13 @@ class CorpusUploadBrowserTests(StaticLiveServerTestCase):
             page.get_by_label("Source URL for extra.md", exact=True).fill(
                 "https://example.org/new"
             )
+            if zip_mode:
+                page.get_by_text(
+                    "From corpus.zip / nested/extra.md", exact=False
+                ).wait_for()
+                page.screenshot(
+                    path="/tmp/coding-corpus-zip-preview.png", full_page=True
+                )
             page.get_by_role("button", name="Confirm import", exact=True).click()
             page.get_by_role(
                 "heading", name="3. Assign to coders", exact=True
@@ -86,4 +116,8 @@ class CorpusUploadBrowserTests(StaticLiveServerTestCase):
         version = DocumentVersion.objects.get(document__name="extra.md")
         self.assertEqual(version.text, "# Policy\r\nA😀 review\r\n")
         self.assertEqual(version.metadata["url"], "https://example.org/new")
+        if zip_mode:
+            self.assertEqual(
+                version.metadata["source_archive"]["member"], "nested/extra.md"
+            )
         self.assertEqual(Annotation.objects.count(), 4)

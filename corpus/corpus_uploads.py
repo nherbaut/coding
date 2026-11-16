@@ -3,7 +3,6 @@
 import datetime
 import hashlib
 import uuid
-from pathlib import PurePosixPath
 from django.core.exceptions import PermissionDenied
 from django.core.validators import URLValidator
 from django.db import transaction
@@ -16,30 +15,7 @@ from .importers import put_document
 from .services import Conflict, assign_case
 from .studies import get_study
 
-MAX_BYTES = 20 * 1024 * 1024
-MAX_FILES = 100
-
-
-def valid_name(name):
-    if (
-        not isinstance(name, str)
-        or not name.strip()
-        or name != name.strip()
-        or len(name) > 250
-    ):
-        raise ValueError(
-            "File names must contain 1 to 250 characters without surrounding spaces"
-        )
-    if "/" in name or "\\" in name or any(ord(c) < 32 for c in name):
-        raise ValueError(
-            "Upload plain file names, without directories or control characters"
-        )
-    if PurePosixPath(name).suffix.lower() not in {".md", ".markdown", ".txt"}:
-        raise ValueError(
-            f"Unsupported file: {name}. Use UTF-8 .md, .markdown or .txt files."
-        )
-    safe_path(name)
-    return name
+from .upload_files import MAX_FILES, valid_name, read_uploads
 
 
 def check_names(study, case_id, names):
@@ -82,28 +58,7 @@ def preview_upload(study, user, uploads, case_id="", new_case="", notes=""):
         if study.cases.filter(name__iexact=name).exists():
             raise ValueError("This case already exists. Select it from the case list.")
         target = dict(id=None, key=uuid.uuid4().hex, name=name)
-    total, files = 0, []
-    for upload in uploads:
-        name = valid_name(upload.name)
-        raw = upload.read(MAX_BYTES + 1)
-        total += len(raw)
-        if total > MAX_BYTES:
-            raise ValueError("An upload batch must not exceed 20 MB")
-        try:
-            text = raw.decode("utf-8")
-        except UnicodeDecodeError:
-            raise ValueError(f"{name} is not UTF-8 text") from None
-        if "\x00" in text or not text.strip("\ufeff \t\n\r"):
-            raise ValueError(f"{name} is empty or contains binary data")
-        files.append(
-            dict(
-                name=name,
-                text=text,
-                bytes=len(raw),
-                hash=hashlib.sha256(raw).hexdigest(),
-                metadata={"notes": notes, "url": ""},
-            )
-        )
+    files = read_uploads(uploads, notes)
     check_names(study, target["id"], [f["name"] for f in files])
     from .management.commands.prune_corpus_uploads import prune
 
@@ -174,6 +129,7 @@ def commit_upload(batch_id, study_id, user, metadata):
                 study=study, key=target["key"], name=target["name"]
             )
         for item, details in zip(data["files"], metadata):
+            details = {**item["metadata"], **details}
             if hashlib.sha256(item["text"].encode("utf-8")).hexdigest() != item["hash"]:
                 raise ValueError("Uploaded text does not match its preview")
             version = put_document(
