@@ -177,7 +177,6 @@ def commit_upload(batch_id, study_id, user, metadata, *, _binding=AUTO_BINDING):
             )
             if binding:
                 path = new_paths[item["name"]]
-                binding.initial_files[path] = version.text
                 binding.document_paths[str(version.pk)] = dict(
                     id=str(uuid.uuid4()),
                     path=path,
@@ -187,7 +186,7 @@ def commit_upload(batch_id, study_id, user, metadata, *, _binding=AUTO_BINDING):
                     metadata=details,
                 )
     if binding and _binding is AUTO_BINDING:
-        binding.save(update_fields=["initial_files", "document_paths"])
+        binding.save(update_fields=["document_paths"])
         from .github_sync import record_event
 
         record_event(study.pk, "corpus-added", actor=user.pk)

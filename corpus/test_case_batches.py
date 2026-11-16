@@ -230,3 +230,42 @@ class CaseBatchTests(TestCase):
         print(
             f"Actual ZIP verified in isolated database: {cases} cases, {documents} documents; original coding preserved"
         )
+
+    @skipUnless(
+        os.environ.get("CODING_CASE_ARCHIVE"),
+        "Actual archive validation is opt-in and uses an isolated PostgreSQL server",
+    )
+    def test_actual_archive_github_projection_fits_bounded_database(self):
+        from .test_github_sync import fixture_files, file_tree, FakeGit
+        from .github_sync import import_study, synchronize_next
+        from .github_repository import inspect_repository
+
+        files, _ = fixture_files()
+        fake = FakeGit(files)
+        study = import_study(
+            self.owner,
+            dict(id=299, full_name="research/actual-test"),
+            "main",
+            7,
+            fake.head("", ""),
+            files,
+            file_tree(files),
+            "Actual ZIP isolated test",
+        )
+        synchronize_next(force=True, client_factory=lambda *_: fake)
+        p = Path(os.environ["CODING_CASE_ARCHIVE"])
+        batch = preview_cases(
+            study, self.owner, [SimpleUploadedFile(p.name, p.read_bytes())]
+        )
+        count = len(batch.data["files"])
+        case_count = len(batch.data["groups"])
+        commit_cases(batch.pk, study.pk, self.owner)
+        synchronize_next(force=True, client_factory=lambda *_: fake)
+        self.assertFalse(study.github.events.filter(published=False).exists())
+        exported = inspect_repository(fake.files, 299)
+        self.assertEqual(len(exported["documents"]), count + 2)
+        self.assertEqual(len(exported["cases"]), case_count + 2)
+        for path, value in files.items():
+            if path.startswith("corpus/"):
+                self.assertEqual(fake.files[path], value)
+        print("Actual archive GitHub projection verified in isolated test database")

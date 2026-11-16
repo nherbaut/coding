@@ -293,7 +293,7 @@ def commit_cases(batch_id, study_id, user):
         )
         results.extend(child.data["files"])
     if binding:
-        binding.save(update_fields=["initial_files", "document_paths"])
+        binding.save(update_fields=["document_paths"])
         GitHubEvent.objects.create(
             binding=binding, kind="corpus-added", actor=str(user.pk)
         )

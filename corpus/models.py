@@ -1,3 +1,4 @@
+from .packed_json import PackedJSONField
 import uuid
 from django.db import models
 from django.utils import timezone
@@ -399,10 +400,10 @@ class GitHubStudy(models.Model):
     initial_commit = models.CharField(max_length=64, blank=True)
     last_commit = models.CharField(max_length=64, blank=True)
     initial_revision = models.ForeignKey(SharedCodebook, on_delete=models.PROTECT)
-    initial_files = models.JSONField(default=dict)
+    initial_files = PackedJSONField(default=dict)
     corpus_blobs = models.JSONField(default=dict)
     managed_blobs = models.JSONField(default=dict)
-    document_paths = models.JSONField(default=dict)
+    document_paths = PackedJSONField(default=dict)
     paused = models.BooleanField(default=False)
     blocked = models.BooleanField(default=False)
     last_error = models.TextField(blank=True)
@@ -437,7 +438,7 @@ class GitHubRun(models.Model):
         GitHubStudy, on_delete=models.CASCADE, related_name="runs"
     )
     target_event = models.PositiveBigIntegerField()
-    files = models.JSONField(default=dict)
+    files = PackedJSONField(default=dict)
     event_ids = models.JSONField(default=list)
     status = models.CharField(max_length=20, default="prepared")
     commit = models.CharField(max_length=64, blank=True)
@@ -473,4 +474,4 @@ class CorpusUploadBatch(models.Model):
     created_by = models.ForeignKey("auth.User", on_delete=models.PROTECT)
     created = models.DateTimeField(auto_now_add=True)
     committed_at = models.DateTimeField(null=True, blank=True)
-    data = models.JSONField(default=dict)
+    data = PackedJSONField(default=dict, packed_key="files")
